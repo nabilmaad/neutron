@@ -19,11 +19,14 @@
 import logging
 import re
 import time
+import netaddr
 
 from ncclient import manager
 from ncclient import xml_
 import xml.etree.ElementTree as ET
 from ciscoconfparse import CiscoConfParse
+
+from quantum.plugins.cisco.l3.agent.hosting_entity_driver import HostingEntityDriver
 
 import cisco_csr_snippets as snippets
 
@@ -33,8 +36,10 @@ LOG = logging.getLogger(__name__)
 # INTERNAL_INTFC = 'GigabitEthernet'
 # SEP = '.'
 
+DEV_NAME_LEN = 14
 
-class CiscoCSRDriver():
+
+class CiscoCSRDriver(HostingEntityDriver):
     """CSR1000v Driver Main Class."""
     def __init__(self, csr_host, csr_ssh_port, csr_user, csr_password):
         self._csr_host = csr_host
@@ -44,8 +49,194 @@ class CiscoCSRDriver():
         self._csr_conn = None
         self._allow_agent = False
         self._intfs_enabled = False
-        # This will disable any public key lookup
+        # Public Key lookup
         self._look_for_keys = False
+
+    ###### Public Functions ########
+
+    def router_added(self, ri):
+        self._csr_create_vrf(ri)
+
+    def router_removed(self, ri, deconfigure=True):
+        self._csr_remove_vrf(ri)
+
+    def internal_network_added(self, ri, ex_gw_port, port):
+        self._csr_create_subinterface(ri, port)
+        if ex_gw_port:
+            self._csr_add_internalnw_nat_rules(ri, port, ex_gw_port)
+
+    def internal_network_removed(self, ri, ex_gw_port, port):
+        if ex_gw_port:
+            self._csr_remove_internalnw_nat_rules(ri, [port], ex_gw_port)
+        self._csr_remove_subinterface(ri, port)
+
+    def external_gateway_added(self, ri, ex_gw_port):
+        self._csr_create_subinterface(ri, ex_gw_port)
+        ex_gw_ip = ex_gw_port['subnet']['gateway_ip']
+        if ex_gw_ip:
+            #Set default route via this network's gateway ip
+            self._csr_add_default_route(ri, ex_gw_ip)
+            #Apply NAT rules for internal networks
+        if len(ri.internal_ports) > 0:
+            for port in ri.internal_ports:
+                self._csr_add_internalnw_nat_rules(ri, port, ex_gw_port)
+
+    def external_gateway_removed(self, ri, ex_gw_port):
+        #Remove internal network NAT rules
+        if len(ri.internal_ports) > 0:
+            self._csr_remove_internalnw_nat_rules(ri, ri.internal_ports,
+                                                  ex_gw_port)
+
+        ex_gw_ip = ex_gw_port['subnet']['gateway_ip']
+        if ex_gw_ip:
+            #Remove default route via this network's gateway ip
+            self._csr_remove_default_route(ri, ex_gw_ip)
+
+        #Finally, remove external network subinterface
+        self._csr_remove_subinterface(ri, ex_gw_port)
+
+    def floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
+        self._csr_add_floating_ip(ri, ex_gw_port, floating_ip, fixed_ip)
+
+    def floating_ip_removed(self, ri, ex_gw_port, floating_ip, fixed_ip):
+        self._csr_remove_floating_ip(ri, ex_gw_port, floating_ip, fixed_ip)
+
+    def routes_updated(self, ri, action, route):
+        self._csr_update_routing_table(ri, action, route)
+
+    ##### First order Functions ####
+    def _csr_create_subinterface(self, ri, port):
+        vrf_name = self._csr_get_vrf_name(ri)
+        ip_cidr = port['ip_cidr']
+        netmask = netaddr.IPNetwork(ip_cidr).netmask
+        gateway_ip = ip_cidr.split('/')[0]
+        subinterface = self._get_interface_name_from_hosting_port(port)
+        vlan = self._get_interface_vlan_from_hosting_port(port)
+        self.create_subinterface(subinterface,
+                                       vlan,
+                                       vrf_name,
+                                       gateway_ip,
+                                       netmask)
+
+    def _csr_remove_subinterface(self, ri, port):
+        vrf_name = self._csr_get_vrf_name(ri)
+        subinterface = self._get_interface_name_from_hosting_port(port)
+        vlan_id = self._get_interface_vlan_from_hosting_port(port)
+        ip = port['fixed_ips'][0]['ip_address']
+        self.remove_subinterface(subinterface, vlan_id, vrf_name, ip)
+
+    def _csr_add_internalnw_nat_rules(self, ri, port, ex_port):
+        vrf_name = self._csr_get_vrf_name(ri)
+        in_vlan = self._get_interface_vlan_from_hosting_port(port)
+        acl_no = 'acl_' + str(in_vlan)
+        internal_cidr = port['ip_cidr']
+        internal_net = netaddr.IPNetwork(internal_cidr).network
+        netmask = netaddr.IPNetwork(internal_cidr).hostmask
+        inner_intfc = self._get_interface_name_from_hosting_port(port)
+        outer_intfc = self._get_interface_name_from_hosting_port(ex_port)
+        self.nat_rules_for_internet_access(acl_no, internal_net,
+                                           netmask, inner_intfc,
+                                           outer_intfc, vrf_name)
+
+    def _csr_remove_internalnw_nat_rules(self, ri, ports, ex_port):
+        acls = []
+        #First disable nat in all inner ports
+        for port in ports:
+            in_intfc_name = self._get_interface_name_from_hosting_port(port)
+            inner_vlan = self._get_interface_vlan_from_hosting_port(port)
+            acls.append("acl_" + str(inner_vlan))
+            self.remove_interface_nat(in_intfc_name, 'inside')
+
+        #Wait for two second
+        LOG.debug(_("Sleep for 2 seconds before clearing NAT rules"))
+        time.sleep(2)
+
+        #Clear the NAT translation table
+        self.remove_dyn_nat_translations()
+
+        # Remove dynamic NAT rules and ACLs
+        vrf_name = self._csr_get_vrf_name(ri)
+        ext_intfc_name = self._get_interface_name_from_hosting_port(ex_port)
+        for acl in acls:
+            self.remove_dyn_nat_rule(acl, ext_intfc_name, vrf_name)
+
+    def _csr_add_default_route(self, ri, gw_ip):
+        vrf_name = self._csr_get_vrf_name(ri)
+        self.add_default_static_route(gw_ip, vrf_name)
+
+    def _csr_remove_default_route(self, ri, gw_ip):
+        vrf_name = self._csr_get_vrf_name(ri)
+        self.remove_default_static_route(gw_ip, vrf_name)
+
+    def _csr_add_floating_ip(self, ri, ex_gw_port, floating_ip, fixed_ip):
+        vrf_name = self._csr_get_vrf_name(ri)
+        self.add_floating_ip(floating_ip, fixed_ip, vrf_name)
+
+    def _csr_remove_floating_ip(self, ri, ex_gw_port, floating_ip, fixed_ip):
+        vrf_name = self._csr_get_vrf_name(ri)
+        out_intfc_name = self._get_interface_name_from_hosting_port(ex_gw_port)
+        # First remove NAT from outer interface
+        self.remove_interface_nat(out_intfc_name, 'outside')
+        #Clear the NAT translation table
+        self.remove_dyn_nat_translations()
+        #Remove the floating ip
+        self.remove_floating_ip(floating_ip, fixed_ip, vrf_name)
+        #Enable NAT on outer interface
+        self.add_interface_nat(out_intfc_name, 'outside')
+
+    def _csr_update_routing_table(self, ri, action, route):
+        #cmd = ['ip', 'route', operation, 'to', route['destination'],
+        #       'via', route['nexthop']]
+        vrf_name = self._csr_get_vrf_name(ri)
+        destination_net = netaddr.IPNetwork(route['destination'])
+        dest = destination_net.network
+        dest_mask = destination_net.netmask
+        next_hop = route['nexthop']
+        if action is 'replace':
+            self.add_static_route(dest, dest_mask,
+                                        next_hop, vrf_name)
+        elif action is 'delete':
+            self.remove_static_route(dest, dest_mask,
+                                           next_hop, vrf_name)
+        else:
+            LOG.error(_('Unknown route command %s'), action)
+
+    def _csr_create_vrf(self, ri):
+        vrf_name = self._csr_get_vrf_name(ri)
+        self.create_vrf(vrf_name)
+
+    def _csr_remove_vrf(self, ri):
+        vrf_name = self._csr_get_vrf_name(ri)
+        self.remove_vrf(vrf_name)
+
+    def _csr_get_vrf_name(self, ri):
+        return ri.router_name()[:DEV_NAME_LEN]
+
+    ###### Internal Functions ####
+
+    def _get_interface_name_from_hosting_port(self, port):
+        vlan = self._get_interface_vlan_from_hosting_port(port)
+        int_no = self._get_interface_no_from_hosting_port(port)
+        intfc_name = 'GigabitEthernet' + str(int_no) + '.' + str(vlan)
+        return intfc_name
+
+    def _get_interface_vlan_from_hosting_port(self, port):
+        trunk_info = port['trunk_info']
+        vlan = trunk_info['segmentation_id']
+        return vlan
+
+    def _get_interface_no_from_hosting_port(self, port):
+        _name = port['trunk_info']['hosting_port_name']
+        if_type = _name.split(':')[0] + ':'
+        if if_type == cl3_constants.T1_PORT_NAME:
+            no = str(int(_name.split(':')[1]) * 2)
+        elif if_type == cl3_constants.T2_PORT_NAME:
+            no = str(int(_name.split(':')[1]) * 2 + 1)
+        else:
+            LOG.error(_('Unknown interface name: %s'), if_type)
+        return no
+
+    ### Native internal functions ####
 
     def _get_connection(self):
         """Make SSH connection to the CSR """
@@ -65,8 +256,8 @@ class CiscoCSRDriver():
             return self._csr_conn
         except Exception:
             LOG.exception(_("Failed connecting to CSR1000v. \n"
-                          "Connection Params Host:%(host)s "
-                          "Port:%(port)s User:%(user)s Password:%(pass)s"),
+                            "Connection Params Host:%(host)s "
+                            "Port:%(port)s User:%(user)s Password:%(pass)s"),
                           {'host': self._csr_host, 'port': self._csr_ssh_port,
                            'user': self._csr_user, 'pass': self._csr_password})
 
