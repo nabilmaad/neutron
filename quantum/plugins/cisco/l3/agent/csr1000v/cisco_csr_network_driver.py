@@ -27,9 +27,9 @@ import xml.etree.ElementTree as ET
 from ciscoconfparse import CiscoConfParse
 
 from quantum.plugins.cisco.l3.agent.hosting_entity_driver import HostingEntityDriver
+from quantum.plugins.cisco.l3.common import constants as cl3_constants
 
 import cisco_csr_snippets as snippets
-
 
 LOG = logging.getLogger(__name__)
 
