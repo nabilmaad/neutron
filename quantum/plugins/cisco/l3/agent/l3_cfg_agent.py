@@ -115,19 +115,26 @@ class HostingEntities(object):
         self._drivers = {}
         self.backlog_hosting_entities = {}
 
-    def get_driver(self, router_id):
+    def get_driver(self, router_info):
+        if isinstance(router_info, RouterInfo):
+            router_id = router_info.router_id
+        else:
+            raise TypeError("Expected RouterInfo object. "
+                            "Got %s instead"), type(router_info)
         hosting_entity = self.router_id_hosting_entities.get(router_id, None)
         if hosting_entity is not None:
             driver = self._drivers.get(hosting_entity['id'], None)
             if driver is None:
-                LOG.error(_("No valid driver found for hosting entity: %s"),
-                          hosting_entity)['id']
+                driver = self._set_driver(router_info)
         else:
             LOG.error(_("Cannot find hosting entity for router: %s"),
                       router_id)
         return driver
 
-    def set_driver(self, router_id, router):
+    def _set_driver(self, router_info):
+        router_id = router_info.router_id
+        router = router_info.router
+
         hosting_entity = router['hosting_entity']
         _he_id = hosting_entity['id']
         _he_type = hosting_entity['host_type']
@@ -144,6 +151,7 @@ class HostingEntities(object):
                                                               _he_passwd)
         self.router_id_hosting_entities[router_id] = hosting_entity
         self._drivers[_he_id] = _csr_driver
+        return _csr_driver
 
     def clear_driver_connection(self, he_id):
             driver = self._drivers.get(he_id, None)
@@ -359,8 +367,7 @@ class L3NATAgent(manager.Manager):
     def _router_added(self, router_id, router):
         ri = RouterInfo(router_id, self.root_helper,
                         self.conf.use_namespaces, router)
-        self._he.set_driver(router_id, router)
-        driver = self._he.get_driver(router_id)
+        driver = self._he.get_driver(ri)
         driver.router_added(ri)
         self.router_info[router_id] = ri
 
@@ -373,7 +380,7 @@ class L3NATAgent(manager.Manager):
         ri.router[l3_constants.FLOATINGIP_KEY] = []
         if deconfigure:
             self.process_router(ri)
-            driver = self._he.get_driver(router_id)
+            driver = self._he.get_driver(ri)
             driver.router_removed(ri, deconfigure)
             self._he.remove_driver(router_id)
         del self.router_info[router_id]
@@ -470,28 +477,28 @@ class L3NATAgent(manager.Manager):
         return ri.router.get('gw_port')
 
     def external_gateway_added(self, ri, ex_gw_port):
-        driver = self._he.get_driver(ri.router_id)
+        driver = self._he.get_driver(ri)
         driver.external_gateway_added(ri, ex_gw_port)
 
     def external_gateway_removed(self, ri, ex_gw_port):
-        driver = self._he.get_driver(ri.router_id)
+        driver = self._he.get_driver(ri)
         driver.external_gateway_removed(ri, ex_gw_port)
 
     def internal_network_added(self, ri, ex_gw_port, port):
-        driver = self._he.get_driver(ri.router_id)
+        driver = self._he.get_driver(ri)
         driver.internal_network_added(ri, ex_gw_port, port)
 
     def internal_network_removed(self, ri, ex_gw_port, port):
-        driver = self._he.get_driver(ri.router_id)
+        driver = self._he.get_driver(ri)
         driver.internal_network_removed(ri, ex_gw_port, port)
 
     def floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
         #ToDo(Hareesh) : Check send gratiotious ARP packet
-        driver = self._he.get_driver(ri.router_id)
+        driver = self._he.get_driver(ri)
         driver.floating_ip_added(ri, ex_gw_port, floating_ip, fixed_ip)
 
     def floating_ip_removed(self, ri, ex_gw_port, floating_ip, fixed_ip):
-        driver = self._he.get_driver(ri.router_id)
+        driver = self._he.get_driver(ri)
         driver.floating_ip_removed(ri, ex_gw_port, floating_ip, fixed_ip)
 
     def router_deleted(self, context, routers):
@@ -644,12 +651,12 @@ class L3NATAgent(manager.Manager):
                 if route['destination'] == del_route['destination']:
                     removes.remove(del_route)
             #replace success even if there is no existing route
-            driver = self._he.get_driver(ri.router_id)
+            driver = self._he.get_driver(ri)
             driver.routes_updated(ri, 'replace', route)
 
         for route in removes:
             LOG.debug(_("Removed route entry is '%s'"), route)
-            driver = self._he.get_driver(ri.router_id)
+            driver = self._he.get_driver(ri)
             driver.routes_updated(ri, 'delete', route)
         ri.routes = new_routes
 
