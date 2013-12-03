@@ -471,19 +471,19 @@ class L3NATAgent(manager.Manager):
 
     def external_gateway_added(self, ri, ex_gw_port):
         driver = self._he.get_driver(ri.router_id)
-        driver.external_gateway_added(self, ri, ex_gw_port)
+        driver.external_gateway_added(ri, ex_gw_port)
 
     def external_gateway_removed(self, ri, ex_gw_port):
         driver = self._he.get_driver(ri.router_id)
-        driver.external_gateway_removed(self, ri, ex_gw_port)
+        driver.external_gateway_removed(ri, ex_gw_port)
 
     def internal_network_added(self, ri, ex_gw_port, port):
         driver = self._he.get_driver(ri.router_id)
-        driver.internal_network_added(self, ri, ex_gw_port, port)
+        driver.internal_network_added(ri, ex_gw_port, port)
 
     def internal_network_removed(self, ri, ex_gw_port, port):
         driver = self._he.get_driver(ri.router_id)
-        driver.internal_network_removed(self, ri, ex_gw_port, port)
+        driver.internal_network_removed(ri, ex_gw_port, port)
 
     def floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
         #ToDo(Hareesh) : Check send gratiotious ARP packet
