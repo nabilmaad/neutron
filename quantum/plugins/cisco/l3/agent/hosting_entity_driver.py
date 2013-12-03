@@ -23,39 +23,39 @@ class HostingEntityDriver():
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def router_added(self, ri):
+    def router_added(self, router_info):
         pass
 
     @abstractmethod
-    def router_removed(self, ri, deconfigure=True):
+    def router_removed(self, router_info, deconfigure=True):
         pass
 
     @abstractmethod
-    def internal_network_added(self, ri, ex_gw_port, port):
+    def internal_network_added(self, router_info, ex_gw_port, port):
         pass
 
     @abstractmethod
-    def internal_network_removed(self, ri, ex_gw_port, port):
+    def internal_network_removed(self, router_info, ex_gw_port, port):
         pass
 
     @abstractmethod
-    def external_gateway_added(self, ri, ex_gw_port):
+    def external_gateway_added(self, router_info, ex_gw_port):
         pass
 
     @abstractmethod
-    def external_gateway_removed(self, ri, ex_gw_port):
+    def external_gateway_removed(self, router_info, ex_gw_port):
         pass
 
     @abstractmethod
-    def floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
+    def floating_ip_added(self, router_info, ex_gw_port, floating_ip, fixed_ip):
         pass
 
     @abstractmethod
-    def floating_ip_removed(self, ri, ex_gw_port, floating_ip, fixed_ip):
+    def floating_ip_removed(self, router_info, ex_gw_port, floating_ip, fixed_ip):
         pass
 
     @abstractmethod
-    def routes_updated(self, ri, action, route):
+    def routes_updated(self, router_info, action, route):
         pass
 
 
