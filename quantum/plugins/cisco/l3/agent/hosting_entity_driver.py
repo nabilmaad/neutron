@@ -19,7 +19,7 @@
 from abc import ABCMeta, abstractmethod
 
 
-class HostingEntityDriver():
+class RoutingDriver():
     __metaclass__ = ABCMeta
 
     @abstractmethod

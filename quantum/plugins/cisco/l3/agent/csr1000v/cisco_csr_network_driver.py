@@ -26,7 +26,7 @@ from ncclient import xml_
 import xml.etree.ElementTree as ET
 from ciscoconfparse import CiscoConfParse
 
-from quantum.plugins.cisco.l3.agent.hosting_entity_driver import HostingEntityDriver
+from quantum.plugins.cisco.l3.agent.hosting_entity_driver import RoutingDriver
 from quantum.plugins.cisco.l3.common import constants as cl3_constants
 
 import cisco_csr_snippets as snippets
@@ -39,7 +39,7 @@ LOG = logging.getLogger(__name__)
 DEV_NAME_LEN = 14
 
 
-class CiscoCSRDriver(HostingEntityDriver):
+class CiscoCSRDriver(RoutingDriver):
     """CSR1000v Driver Main Class."""
     def __init__(self, csr_host, csr_ssh_port, csr_user, csr_password):
         self._csr_host = csr_host
