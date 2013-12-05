@@ -132,30 +132,32 @@ class HostingEntities(object):
             if driver is None:
                 driver = self._set_driver(router_info)
         else:
-            LOG.error(_("Cannot find hosting entity for router: %s"),
-                      router_id)
+            driver = self._set_driver(router_info)
         return driver
 
     def _set_driver(self, router_info):
-        router_id = router_info.router_id
-        router = router_info.router
+        try:
+            router_id = router_info.router_id
+            router = router_info.router
 
-        hosting_entity = router['hosting_entity']
-        _he_id = hosting_entity['id']
-        _he_type = hosting_entity['host_type']
-        _he_ip = hosting_entity['ip_address']
-        _he_port = hosting_entity['port']
+            hosting_entity = router['hosting_entity']
+            _he_id = hosting_entity['id']
+            _he_type = hosting_entity['host_type']
+            _he_ip = hosting_entity['ip_address']
+            _he_port = hosting_entity['port']
 
-        #TODO(hareesh): username and password must not be hard coded.
-        _he_user = 'stack'
-        _he_passwd = 'cisco'
+            #TODO(hareesh): username and password must not be hard coded.
+            _he_user = 'stack'
+            _he_passwd = 'cisco'
 
-        _csr_driver = cisco_csr_network_driver.CiscoCSRDriver(_he_ip,
-                                                              _he_port,
-                                                              _he_user,
-                                                              _he_passwd)
-        self.router_id_hosting_entities[router_id] = hosting_entity
-        self._drivers[_he_id] = _csr_driver
+            _csr_driver = cisco_csr_network_driver.CiscoCSRDriver(_he_ip,
+                                                                  _he_port,
+                                                                  _he_user,
+                                                                  _he_passwd)
+            self.router_id_hosting_entities[router_id] = hosting_entity
+            self._drivers[_he_id] = _csr_driver
+        except (AttributeError, KeyError) as e:
+            LOG.error(_("Cannot set driver for router. Reason: %s"), e)
         return _csr_driver
 
     def clear_driver_connection(self, he_id):
