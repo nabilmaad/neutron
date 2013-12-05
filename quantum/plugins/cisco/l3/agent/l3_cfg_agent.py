@@ -105,10 +105,15 @@ class L3PluginApi(proxy.RpcProxy):
                   topic=self.topic)
 
 
-#Additional class to store the Hosting Entities to driver bindings.
-#Thus we can reuse drivers to different logical routers in the same
-# hosting entity
+
 class HostingEntities(object):
+    """
+    Hosting Entities class that manages different hosting devices eg: CSR.
+    This stores the bindings between different routers and where they are
+    hosted. it also stores the drivers of these hosting devices and reuse
+    them if different routers are implemented by the same hosting device
+    Thus we can reuse these drivers 
+    """
 
     def __init__(self):
         self.router_id_hosting_entities = {}
@@ -207,6 +212,10 @@ class HostingEntities(object):
         return False
 
     def check_backlogged_hosting_entities(self):
+        """" Checks the status of backlogged hosting entities.
+        Has the intelligence to give allowance for the booting time for
+        newly spun up instances. Sends back a response dict of the format:
+        {'reachable': [<he_id>,..], 'dead': [<he_id>,..]}  """
         response_dict = {'reachable': [],
                          'dead': []}
         for he_id in self.backlog_hosting_entities.keys():
@@ -299,7 +308,7 @@ class L3NATAgent(manager.Manager):
                    help=_("Send this many gratuitous ARPs for HA setup, "
                           "set it below or equal to 0 to disable this "
                           "feature.")),
-        # Hareesh : Temporarily setting this to False if needed
+        # Hareesh : Temporarily setting this to False for use in CSR env
         cfg.BoolOpt('use_namespaces', default=True,
                     help=_("Allow overlapping IP.")),
         cfg.StrOpt('router_id', default='',
@@ -314,12 +323,11 @@ class L3NATAgent(manager.Manager):
                           "by the agents.")),
         cfg.BoolOpt('enable_metadata_proxy', default=True,
                     help=_("Allow running metadata proxy.")),
+        cfg.BoolOpt('use_hosting_entities', default=True,
+                    help=_("Allow hosting entities for routing service.")),
         cfg.IntOpt('hosting_entity_dead_timeout', default=300,
                    help=_("The time in seconds until a backlogged "
                           "hosting entity is presumed dead ")),
-        cfg.BoolOpt('use_hosting_entities', default=True,
-                    help=_("Allow hosting entities for routing service.")),
-
     ]
 
     def __init__(self, host, conf=None):
@@ -344,7 +352,7 @@ class L3NATAgent(manager.Manager):
         self.plugin_rpc = L3PluginApi(topics.PLUGIN, host)
         self.fullsync = True
         self.sync_sem = semaphore.Semaphore(1)
-        #Hareesh
+        #CSR
         self._he = HostingEntities()
         super(L3NATAgent, self).__init__(host=self.conf.host)
 
@@ -493,7 +501,7 @@ class L3NATAgent(manager.Manager):
         driver.internal_network_removed(ri, ex_gw_port, port)
 
     def floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
-        #ToDo(Hareesh) : Check send gratiotious ARP packet
+        #ToDo(Hareesh) : Check need to send gratuitous ARP packet
         driver = self._he.get_driver(ri)
         driver.floating_ip_added(ri, ex_gw_port, floating_ip, fixed_ip)
 
@@ -531,11 +539,13 @@ class L3NATAgent(manager.Manager):
                 self.fullsync = True
 
     def hosting_entity_removed(self, context, payload):
-        # payload = {
-        #     'hosting_data': {'he_id1': {'routers': [id1, id2, ...]},
-        #                      'he_id2': {'routers': [id3, id4, ...]}, ... },
-        #     'deconfigure': True/False}
-
+        """ RPC Notification that a hosting entity was removed.
+        Payload format
+         {
+             'hosting_data': {'he_id1': {'routers': [id1, id2, ...]},
+                              'he_id2': {'routers': [id3, id4, ...]}, ... },
+             'deconfigure': True/False}
+        """
         for he_id, resource_data in payload['hosting_data'].items():
             LOG.debug(_("Hosting entity removal data: %s "),
                       payload['hosting_data'])
