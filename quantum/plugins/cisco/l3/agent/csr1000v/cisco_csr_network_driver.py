@@ -104,7 +104,8 @@ class CiscoCSRDriver(RoutingDriver):
     def routes_updated(self, ri, action, route):
         self._csr_update_routing_table(ri, action, route)
 
-    ##### First order Functions ####
+    ##### First order Internal Functions ####
+
     def _csr_create_subinterface(self, ri, port):
         vrf_name = self._csr_get_vrf_name(ri)
         ip_cidr = port['ip_cidr']
@@ -212,7 +213,7 @@ class CiscoCSRDriver(RoutingDriver):
     def _csr_get_vrf_name(self, ri):
         return ri.router_name()[:DEV_NAME_LEN]
 
-    ###### Internal Functions ####
+    ###### Native Internal Functions ####
 
     def _get_interface_name_from_hosting_port(self, port):
         vlan = self._get_interface_vlan_from_hosting_port(port)
@@ -235,8 +236,6 @@ class CiscoCSRDriver(RoutingDriver):
         else:
             LOG.error(_('Unknown interface name: %s'), if_type)
         return no
-
-    ### Native internal functions ####
 
     def _get_connection(self):
         """Make SSH connection to the CSR """
@@ -465,6 +464,7 @@ class CiscoCSRDriver(RoutingDriver):
         # finally:
         #     conn.unlock(target='running')
 
+    #ToDo(Hareesh): Not used now. To be cleaned up when rebasing on icehouse trunk.
     def old_remove_nat_rules_for_internet_access(self, acl_no,
                                              network,
                                              netmask,
@@ -618,7 +618,7 @@ class CiscoCSRDriver(RoutingDriver):
 
 
 ##################
-#Main
+# Main
 ##################
 
 if __name__ == "__main__":

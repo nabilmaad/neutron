@@ -149,8 +149,8 @@ REMOVE_ACL = """
 # Set Dynamic source translation on an interface
 # Syntax: ip nat inside source list <acl_no> interface <interface>
 # .......vrf <vrf_name> overload
-#eg: $(config)ip nat inside source list acl_500
-#    .........interface GigabitEthernet3.100 vrf nrouter-e7d4y5 overload
+# eg: $(config)ip nat inside source list acl_500
+#    ..........interface GigabitEthernet3.100 vrf nrouter-e7d4y5 overload
 #========================================================================#
 SNAT_CFG = "ip nat inside source list %s interface %s vrf %s overload"
 
@@ -167,8 +167,8 @@ SET_DYN_SRC_TRL_INTFC = """
 # Remove Dynamic source translation on an interface
 # Syntax: no ip nat inside source list <acl_no> interface <interface>
 # .......vrf <vrf_name> overload
-#eg: $(config)no ip nat inside source list acl_500
-#    .........interface GigabitEthernet3.100 vrf nrouter-e7d4y5 overload
+# eg: $(config)no ip nat inside source list acl_500
+#    ..........interface GigabitEthernet3.100 vrf nrouter-e7d4y5 overload
 #========================================================================#
 REMOVE_DYN_SRC_TRL_INTFC = """
 <config>
@@ -211,8 +211,8 @@ REMOVE_NAT = """
 # Set Static source translation on an interface
 # Syntax: ip nat inside source static <fixed_ip> <floating_ip>
 # .......vrf <vrf_name> match-in-vrf
-#eg: $(config)ip nat inside source static 192.168.0.1 121.158.0.5
-#    .........vrf nrouter-e7d4y5 match-in-vrf
+# eg: $(config)ip nat inside source static 192.168.0.1 121.158.0.5
+#    ..........vrf nrouter-e7d4y5 match-in-vrf
 #========================================================================#
 SET_STATIC_SRC_TRL = """
 <config>
@@ -227,8 +227,8 @@ SET_STATIC_SRC_TRL = """
 # Remove Static source translation on an interface
 # Syntax: no ip nat inside source static <fixed_ip> <floating_ip>
 # .......vrf <vrf_name> match-in-vrf
-#eg: $(config)no ip nat inside source static 192.168.0.1 121.158.0.5
-#    .........vrf nrouter-e7d4y5 match-in-vrf
+# eg: $(config)no ip nat inside source static 192.168.0.1 121.158.0.5
+#    ..........vrf nrouter-e7d4y5 match-in-vrf
 #========================================================================#
 REMOVE_STATIC_SRC_TRL = """
 <config>
@@ -242,7 +242,7 @@ REMOVE_STATIC_SRC_TRL = """
 #==============================================================================#
 # Set ip route
 # Syntax: ip route vrf <vrf-name> <destination> <mask> [<interface>] <next hop>
-#eg: $(config)ip route vrf nrouter-e7d4y5 8.8.0.0  255.255.0.0 10.0.100.255
+# eg: $(config)ip route vrf nrouter-e7d4y5 8.8.0.0  255.255.0.0 10.0.100.255
 #=============================================================================#
 SET_IP_ROUTE = """
 <config>
@@ -255,7 +255,7 @@ SET_IP_ROUTE = """
 #==============================================================================#
 # Remove ip route
 # Syntax: no ip route vrf <vrf-name> <destination> <mask> [<interface>] <next hop>
-#eg: $(config)no ip route vrf nrouter-e7d4y5 8.8.0.0  255.255.0.0 10.0.100.255
+# eg: $(config)no ip route vrf nrouter-e7d4y5 8.8.0.0  255.255.0.0 10.0.100.255
 #=============================================================================#
 REMOVE_IP_ROUTE = """
 <config>
@@ -267,7 +267,7 @@ REMOVE_IP_ROUTE = """
 #==============================================================================#
 # Set default ip route
 # Syntax: ip route vrf <vrf-name> 0.0.0.0 0.0.0.0 [<interface>] <next hop>
-#eg: $(config)ip route vrf nrouter-e7d4y5 0.0.0.0  0.0.0.0 10.0.100.255
+# eg: $(config)ip route vrf nrouter-e7d4y5 0.0.0.0  0.0.0.0 10.0.100.255
 #=============================================================================#
 DEFAULT_ROUTE_CFG = 'ip route vrf %s 0.0.0.0 0.0.0.0 %s'
 
@@ -282,7 +282,7 @@ SET_DEFAULT_ROUTE = """
 #==============================================================================#
 # Remove default ip route
 # Syntax: ip route vrf <vrf-name> 0.0.0.0 0.0.0.0 [<interface>] <next hop>
-#eg: $(config)ip route vrf nrouter-e7d4y5 0.0.0.0  0.0.0.0 10.0.100.255
+# eg: $(config)ip route vrf nrouter-e7d4y5 0.0.0.0  0.0.0.0 10.0.100.255
 #=============================================================================#
 REMOVE_DEFAULT_ROUTE = """
 <config>
@@ -295,7 +295,7 @@ REMOVE_DEFAULT_ROUTE = """
 #==============================================================================#
 # Clear dynamic nat translations. This is used to clear any nat bindings before
 # we can turn off NAT on an interface
-#Syntax: clear ip nat translation [forced]
+# Syntax: clear ip nat translation [forced]
 #=============================================================================#
 CLEAR_DYN_NAT_TRANS = """
 <oper-data-format-text-block>
