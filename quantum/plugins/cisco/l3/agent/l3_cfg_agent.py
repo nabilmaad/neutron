@@ -50,6 +50,14 @@ LOG = logging.getLogger(__name__)
 
 N_ROUTER_PREFIX = 'nrouter-'
 
+"""
+Change log:
+ Hareesh - 9th Dec 2013:
+    Bringing l3-agent updated with icehouse changes upto
+    commit id SHA:c1d7d86fc477a27c452a3d5e624878fef0e264fa
+    Merge "l3_agent: make process_router more robust"
+"""
+
 
 class L3PluginApi(proxy.RpcProxy):
     """Agent side of the l3 agent RPC API.
@@ -697,6 +705,7 @@ class L3NATAgentWithStateReport(L3NATAgent):
             'start_flag': True,
             'agent_type': cl3_constants.AGENT_TYPE_L3_CFG}
         report_interval = cfg.CONF.AGENT.report_interval
+        self.use_call = True
         if report_interval:
             self.heartbeat = loopingcall.LoopingCall(self._report_state)
             self.heartbeat.start(interval=report_interval)
@@ -730,9 +739,10 @@ class L3NATAgentWithStateReport(L3NATAgent):
         configurations['hosting_entities'] = routers_per_he
         configurations['non_responding_hosting_entities'] = non_responding
         try:
-            self.state_rpc.report_state(self.context,
-                                        self.agent_state)
+            self.state_rpc.report_state(self.context, self.agent_state,
+                                        self.use_call)
             self.agent_state.pop('start_flag', None)
+            self.use_call = False
         except AttributeError:
             # This means the server does not support report_state
             LOG.warn(_("Quantum server does not support state report."
