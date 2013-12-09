@@ -35,6 +35,7 @@ from quantum.common import utils as common_utils
 from quantum import context
 from quantum import manager
 from quantum.openstack.common import importutils
+from quantum.openstack.common import lockutils
 from quantum.openstack.common import log as logging
 from quantum.openstack.common import loopingcall
 from quantum.openstack.common import periodic_task
@@ -519,34 +520,19 @@ class L3NATAgent(manager.Manager):
         driver = self._he.get_driver(ri)
         driver.floating_ip_removed(ri, ex_gw_port, floating_ip, fixed_ip)
 
-    def router_deleted(self, context, routers):
+    def router_deleted(self, context, router_id):
         """Deal with router deletion RPC message."""
-        if not routers:
-            return
-        with self.sync_sem:
-            for router in routers:
-                router_id = router['id']
-                if router_id in self.router_info:
-                    try:
-                        self._router_removed(router_id)
-                    except Exception:
-                        msg = _("Failed dealing with router "
-                                "'%s' deletion RPC message")
-                        LOG.debug(msg, router_id)
-                        self.fullsync = True
+        LOG.debug(_('Got router deleted notification for %s'), router_id)
+        self.removed_routers.add(router_id)
 
     def routers_updated(self, context, routers):
         """Deal with routers modification and creation RPC message."""
-        if not routers:
-            return
-        with self.sync_sem:
-            try:
-                self._process_routers(routers)
-            except Exception:
-                msg = _("Failed dealing with routers update RPC message. "
-                        "Exception %s")
-                LOG.error(msg, str(Exception))
-                self.fullsync = True
+        LOG.debug(_('Got routers updated notification :%s'), routers)
+        if routers:
+            # This is needed for backward compatibility
+            if isinstance(routers[0], dict):
+                routers = [router['id'] for router in routers]
+            self.updated_routers.update(routers)
 
     def hosting_entity_removed(self, context, payload):
         """ RPC Notification that a hosting entity was removed.
@@ -564,12 +550,15 @@ class L3NATAgent(manager.Manager):
             self._he.pop(he_id)
 
     def router_removed_from_agent(self, context, payload):
-        self.router_deleted(context, payload['router_id'])
+        LOG.debug(_('Got router removed from agent :%r'), payload)
+        self.removed_routers.add(payload['router_id'])
 
     def router_added_to_agent(self, context, payload):
+        LOG.debug(_('Got router added to agent :%r'), payload)
         self.routers_updated(context, payload)
 
     def _process_routers(self, routers, all_routers=False):
+        pool = eventlet.GreenPool()
         if (self.conf.external_network_bridge and
             not ip_lib.device_exists(self.conf.external_network_bridge)):
             LOG.error(_("The external network bridge '%s' does not exist"),
@@ -591,70 +580,86 @@ class L3NATAgent(manager.Manager):
         for r in routers:
             if not r['admin_state_up']:
                 continue
-
             # If namespaces are disabled, only process the router associated
             # with the configured agent id.
             if (not self.conf.use_namespaces and
                 r['id'] != self.conf.router_id):
                 continue
-
             ex_net_id = (r['external_gateway_info'] or {}).get('network_id')
             if not ex_net_id and not self.conf.handle_internal_only_routers:
                 continue
-
             if ex_net_id and ex_net_id != target_ex_net_id:
                 continue
-
             cur_router_ids.add(r['id'])
-
             if not self._he.is_hosting_entity_reachable(r['id'], r):
                 LOG.info(_("Router: %(id)s is on unreachable hosting entity. "
                          "Skip processing it."), {'id': r['id']})
                 continue
-
             if r['id'] not in self.router_info:
                 self._router_added(r['id'], r)
-
             ri = self.router_info[r['id']]
             ri.router = r
-            self.process_router(ri)
+            pool.spawn_n(self.process_router, ri)
         # identify and remove routers that no longer exist
         for router_id in prev_router_ids - cur_router_ids:
-            self._router_removed(router_id)
+            pool.spawn_n(self._router_removed, router_id)
+            pool.waitall()
 
+    @lockutils.synchronized('l3-agent', 'neutron-')
+    def _rpc_loop(self):
+        # _rpc_loop and _sync_routers_task will not be
+        # executed in the same time because of lock.
+        # so we can clear the value of updated_routers
+        # and removed_routers
+        try:
+            LOG.debug(_("Starting RPC loop for %d updated routers"),
+                      len(self.updated_routers))
+            if self.updated_routers:
+                router_ids = list(self.updated_routers)
+                self.updated_routers.clear()
+                routers = self.plugin_rpc.get_routers(
+                    self.context, router_ids)
+                self._process_routers(routers)
+            self._process_router_delete()
+            LOG.debug(_("RPC loop successfully completed"))
+        except Exception:
+            LOG.exception(_("Failed synchronizing routers"))
+            self.fullsync = True
+
+    def _process_router_delete(self):
+        current_removed_routers = list(self.removed_routers)
+        for router_id in current_removed_routers:
+            self._router_removed(router_id)
+            self.removed_routers.remove(router_id)
+
+    def _router_ids(self):
+        if not self.conf.use_namespaces:
+            return [self.conf.router_id]
+
+    ##
     @periodic_task.periodic_task
+    @lockutils.synchronized('l3-agent', 'neutron-')
     def _sync_routers_task(self, context):
-        # we need to sync with router deletion RPC message
-        with self.sync_sem:
-            if self.fullsync:
-                try:
-                    if not self.conf.use_namespaces:
-                        router_id = self.conf.router_id
-                    else:
-                        router_id = None
-                    routers = self.plugin_rpc.get_routers(
-                        context, router_id)
-                    self._process_routers(routers, all_routers=True)
-                    self.fullsync = False
-                except Exception:
-                    LOG.exception(_("Failed synchronizing routers"))
-                    self.fullsync = True
-            else:
-                LOG.debug(_("Full sync is False. Processing backlog."))
-                res = self._he.check_backlogged_hosting_entities()
-                if res['reachable']:
-                    #Fetch routers for now reachable HE's
-                    LOG.debug(_("Requesting routers for hosting entities: %s "
-                                "that are now responding."), res['reachable'])
-                    routers = self.plugin_rpc.get_routers(
-                        context, router_id=None, he_ids=res['reachable'])
-                    self._process_routers(routers, all_routers=True)
-                if res['dead']:
-                    LOG.debug(_("Reporting dead hosting entities: %s"),
-                              res['dead'])
-                    # Process dead HE's
-                    self.plugin_rpc.report_dead_hosting_entities(
-                        context, he_ids=res['dead'])
+        if self.services_sync:
+            super(L3NATAgent, self).process_services_sync(context)
+        LOG.debug(_("Starting _sync_routers_task - fullsync:%s"),
+                  self.fullsync)
+        if not self.fullsync:
+            return
+        try:
+            router_ids = self._router_ids()
+            self.updated_routers.clear()
+            self.removed_routers.clear()
+            routers = self.plugin_rpc.get_routers(
+                context, router_ids)
+
+            LOG.debug(_('Processing :%r'), routers)
+            self._process_routers(routers, all_routers=True)
+            self.fullsync = False
+            LOG.debug(_("_sync_routers_task successfully completed"))
+        except Exception:
+            LOG.exception(_("Failed synchronizing routers"))
+            self.fullsync = True
 
     def after_start(self):
         LOG.info(_("L3 Cfg Agent started"))
@@ -707,10 +712,12 @@ class L3NATAgentWithStateReport(L3NATAgent):
         report_interval = cfg.CONF.AGENT.report_interval
         self.use_call = True
         if report_interval:
-            self.heartbeat = loopingcall.LoopingCall(self._report_state)
+            self.heartbeat = loopingcall.FixedIntervalLoopingCall(
+                self._report_state)
             self.heartbeat.start(interval=report_interval)
 
     def _report_state(self):
+        LOG.debug(_("Report state task started"))
         num_ex_gw_ports = 0
         num_interfaces = 0
         num_floating_ips = 0
@@ -743,6 +750,7 @@ class L3NATAgentWithStateReport(L3NATAgent):
                                         self.use_call)
             self.agent_state.pop('start_flag', None)
             self.use_call = False
+            LOG.debug(_("Report state task successfully completed"))
         except AttributeError:
             # This means the server does not support report_state
             LOG.warn(_("Quantum server does not support state report."
@@ -758,7 +766,7 @@ class L3NATAgentWithStateReport(L3NATAgent):
         LOG.info(_("agent_updated by server side %s!"), payload)
 
 
-def main():
+def main(manager='neutron.agent.l3_agent.L3NATAgentWithStateReport'):
     #Hareesh
     #eventlet.monkey_patch()
     conf = cfg.CONF
@@ -773,6 +781,5 @@ def main():
         binary='quantum-l3-cfg-agent',
         topic=cl3_constants.L3_CFG_AGENT,
         report_interval=cfg.CONF.AGENT.report_interval,
-        manager=('quantum.plugins.cisco.l3.agent.'
-                'l3_cfg_agent.L3NATAgentWithStateReport'))
+        manager=manager)
     service.launch(server).wait()
