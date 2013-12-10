@@ -50,6 +50,7 @@ from quantum.openstack.common import timeutils
 LOG = logging.getLogger(__name__)
 
 N_ROUTER_PREFIX = 'nrouter-'
+RPC_LOOP_INTERVAL = 1
 
 """
 Change log:
@@ -75,9 +76,8 @@ class L3PluginApi(proxy.RpcProxy):
             topic=topic, default_version=self.BASE_RPC_API_VERSION)
         self.host = host
 
-    def get_routers(self, context, fullsync=True, router_id=None, he_ids=[]):
+    def get_routers(self, context, fullsync=True, router_ids=None, he_ids=[]):
         """Make a remote process call to retrieve the sync data for routers."""
-        router_ids = [router_id] if router_id else None
         #Note that the l3_cfg_agent makes a call on 'cfg_sync_routers'
         return self.call(context,
                          self.make_msg('cfg_sync_routers', host=self.host,
@@ -303,6 +303,18 @@ class RouterInfo(object):
 
 class L3NATAgent(manager.Manager):
 
+    """Manager for L3NatAgent
+
+         API version history:
+         1.0 initial Version
+         1.1 changed the type of the routers parameter
+             to the routers_updated method.
+             It was previously a list of routers in dict format.
+             It is now a list of router IDs only.
+             Per rpc versioning rules,  it is backwards compatible.
+    """
+    RPC_API_VERSION = '1.1'
+
     OPTS = [
         cfg.StrOpt('external_network_bridge', default='',
                    help=_("Name of bridge used for external network "
@@ -362,9 +374,14 @@ class L3NATAgent(manager.Manager):
         self.context = context.get_admin_context_without_session()
         self.plugin_rpc = L3PluginApi(topics.PLUGIN, host)
         self.fullsync = True
-        self.sync_sem = semaphore.Semaphore(1)
+        self.updated_routers = set()
+        self.removed_routers = set()
+        self.sync_progress = False
         #CSR
         self._he = HostingEntities()
+        self.rpc_loop = loopingcall.FixedIntervalLoopingCall(
+            self._rpc_loop)
+        self.rpc_loop.start(interval=RPC_LOOP_INTERVAL)
         super(L3NATAgent, self).__init__(host=self.conf.host)
 
     def _fetch_external_net_id(self):
@@ -640,8 +657,8 @@ class L3NATAgent(manager.Manager):
     @periodic_task.periodic_task
     @lockutils.synchronized('l3-agent', 'neutron-')
     def _sync_routers_task(self, context):
-        if self.services_sync:
-            super(L3NATAgent, self).process_services_sync(context)
+        # if self.services_sync:
+        #     super(L3NATAgent, self).process_services_sync(context)
         LOG.debug(_("Starting _sync_routers_task - fullsync:%s"),
                   self.fullsync)
         if not self.fullsync:
