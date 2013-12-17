@@ -31,19 +31,23 @@ class RoutingDriver():
         pass
 
     @abstractmethod
-    def internal_network_added(self, router_info, ex_gw_port, port):
+    def internal_network_added(self, router_info, port):
         pass
 
     @abstractmethod
-    def internal_network_removed(self, router_info, ex_gw_port, port):
+    def internal_network_removed(self, router_info, port):
         pass
 
     @abstractmethod
-    def external_gateway_added(self, router_info, ex_gw_port):
+    def external_gateway_added(self, router_info, ex_gw_port, internal_ports):
         pass
 
     @abstractmethod
-    def external_gateway_removed(self, router_info, ex_gw_port):
+    def external_gateway_removed(self, router_info, ex_gw_port, internal_ports):
+        pass
+
+    @abstractmethod
+    def handle_snat(self, router_info, ex_gw_port, internal_ports, action):
         pass
 
     @abstractmethod

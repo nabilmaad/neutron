@@ -289,12 +289,40 @@ class RouterInfo(object):
     def __init__(self, router_id, root_helper, use_namespaces, router):
         self.router_id = router_id
         self.ex_gw_port = None
+        self._snat_enabled = None
+        self._snat_action = None
         self.internal_ports = []
         self.floating_ips = []
         self.root_helper = root_helper
         self.use_namespaces = use_namespaces
         self.router = router
         self.routes = []
+
+    @property
+    def router(self):
+        return self._router
+
+    @router.setter
+    def router(self, value):
+        self._router = value
+        if not self._router:
+            return
+            # enable_snat by default if it wasn't specified by plugin
+        self._snat_enabled = self._router.get('enable_snat', True)
+        # Set a SNAT action for the router
+        if self._router.get('gw_port'):
+            self._snat_action = ('add_rules' if self._snat_enabled
+                                 else 'remove_rules')
+        elif self.ex_gw_port:
+            # Gateway port was removed, remove rules
+            self._snat_action = 'remove_rules'
+
+    def perform_snat_action(self, snat_callback, *args):
+        # Process SNAT rules for attached subnets
+        if self._snat_action:
+            snat_callback(self, self._router.get('gw_port'),
+                          *args, action=self._snat_action)
+        self._snat_action = None
 
     def router_name(self):
         return N_ROUTER_PREFIX + self.router_id
@@ -445,27 +473,38 @@ class L3NATAgent(manager.Manager):
 
         for p in new_ports:
             self._set_subnet_info(p)
+            self.internal_network_added(ri, p)
             ri.internal_ports.append(p)
-            self.internal_network_added(ri, ex_gw_port, p)
 
         for p in old_ports:
+            self.internal_network_removed(ri, p)
             ri.internal_ports.remove(p)
-            self.internal_network_removed(ri, ex_gw_port, p)
 
-        internal_cidrs = [p['ip_cidr'] for p in ri.internal_ports]
+        # This is what is extracted from the internal ports
+        #internal_cidrs = [p['ip_cidr'] for p in ri.internal_ports]
 
         if ex_gw_port and not ri.ex_gw_port:
             self._set_subnet_info(ex_gw_port)
-            self.external_gateway_added(ri, ex_gw_port)
+            self.external_gateway_added(ri, ex_gw_port, ri.internal_ports)
         elif not ex_gw_port and ri.ex_gw_port:
-            self.external_gateway_removed(ri, ri.ex_gw_port)
+            self.external_gateway_removed(ri, ri.ex_gw_port, ri.internal_ports)
 
-        if ri.ex_gw_port or ex_gw_port:
+        # Process SNAT rules for external gateway
+        ri.perform_snat_action(self._handle_router_snat_rules,
+                               ri.internal_ports, ex_gw_port)
+        # Process DNAT rules for floating IPs
+        #ToDo(Hareesh): Check this, as the if clause was changed from before
+        if ex_gw_port:
             self.process_router_floating_ips(ri, ex_gw_port)
 
         ri.ex_gw_port = ex_gw_port
-
+        ri.enable_snat = ri.router.get('enable_snat')
         self.routes_updated(ri)
+
+    def _handle_router_snat_rules(self, ri, ex_gw_port, internal_ports,
+                                  action):
+        driver = self._he.get_driver(ri)
+        driver.handle_snat(ri, ex_gw_port, internal_ports, action)
 
     def process_router_floating_ips(self, ri, ex_gw_port):
         floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
