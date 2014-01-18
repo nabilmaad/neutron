@@ -24,28 +24,28 @@ import datetime
 from oslo.config import cfg
 
 from quantum.agent.common import config
-from quantum.agent.linux import external_process
-from quantum.agent.linux import interface
-from quantum.agent.linux import ip_lib
-from quantum.agent.linux import utils as linux_utils
+# from quantum.agent.linux import external_process
+# from quantum.agent.linux import interface
+# from quantum.agent.linux import ip_lib
+# from quantum.agent.linux import utils as linux_utils
 from quantum.agent import rpc as agent_rpc
-from quantum.common import constants as l3_constants
+# from quantum.common import constants as l3_constants
 from quantum.common import topics
-from quantum.common import utils as common_utils
+# from quantum.common import utils as common_utils
 from quantum import context
 from quantum import manager
-from quantum.openstack.common import importutils
+# from quantum.openstack.common import importutils
 from quantum.openstack.common import log as logging
-from quantum.openstack.common import loopingcall
+# from quantum.openstack.common import loopingcall
 from quantum.openstack.common import periodic_task
-from quantum.openstack.common.rpc import common as rpc_common
+# from quantum.openstack.common.rpc import common as rpc_common
 from quantum.openstack.common.rpc import proxy
-from quantum.openstack.common import service
+# from quantum.openstack.common import service
 from quantum.plugins.cisco.l3.common import constants as cl3_constants
-from quantum.plugins.cisco.l3.agent.csr1000v import cisco_csr_network_driver
-from quantum import service as quantum_service
+# from quantum.plugins.cisco.l3.agent.csr1000v import cisco_csr_network_driver
+# from quantum import service as quantum_service
 from quantum.openstack.common import timeutils
-from quantum.plugins.cisco.l3.extensions import ha
+# from quantum.plugins.cisco.l3.extensions import ha
 
 LOG = logging.getLogger(__name__)
 
@@ -290,7 +290,7 @@ class RouterInfo(object):
         self.routes = []
         self.ha_info = None
         # Set 'ha_info' if present
-        if router.get('ha_info') is not None:
+        if router.get('ha_info', None) is not None:
             self.ha_info = router['ha_info']
 
     def router_name(self):
@@ -344,17 +344,6 @@ class L3NATAgent(manager.Manager):
             self.conf = cfg.CONF
         self.root_helper = config.get_root_helper(self.conf)
         self.router_info = {}
-
-        if not self.conf.interface_driver:
-            raise SystemExit(_('An interface driver must be specified'))
-        try:
-            self.driver = importutils.import_object(self.conf.interface_driver,
-                                                    self.conf)
-        except Exception:
-            msg = _("Error importing interface driver "
-                    "'%s'") % self.conf.interface_driver
-            raise SystemExit(msg)
-
         self.context = context.get_admin_context_without_session()
         self.plugin_rpc = L3PluginApi(topics.PLUGIN, host)
         self.fullsync = True
