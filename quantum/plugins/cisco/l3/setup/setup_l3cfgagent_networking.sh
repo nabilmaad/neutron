@@ -16,6 +16,16 @@ n1kvPortPolicyProfileNames=(osn_mgmt_pp osn_t1_pp osn_t2_pp)
 vethHostSideName=l3cfgagent_hs
 vethBridgeSideName=l3cfgagent_bs
 
+cisco=`quantum help | awk '/network-profile-create/ { if ($1 == "network-profile-create") { print "No"; } else { print "Yes"; }}'`
+if [ "$cisco" == "Yes" ]; then
+    CMD_NETWORK_PROFILE_LIST=cisco-network-profile-list
+    CMD_NETWORK_PROFILE_CREATE=cisco-network-profile-create
+    CMD_POLICY_PROFILE_LIST=cisco-policy-profile-list
+else
+    CMD_NETWORK_PROFILE_LIST=network-profile-list
+    CMD_NETWORK_PROFILE_CREATE=network-profile-create
+    CMD_POLICY_PROFILE_LIST=policy-profile-list
+fi
 
 
 tenantId=`keystone tenant-get $l3AdminTenant 2>&1 | awk '/No tenant|id/ { if ($1 == "No") print "No"; else print $4; }'`
@@ -29,9 +39,9 @@ fi
 function get_port_profile_id() {
     name=$1
     local c=0
-    pProfileId=`quantum cisco-policy-profile-list | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
+    pProfileId=`quantum $CMD_POLICY_PROFILE_LIST | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
     while [ $c -le 5 ] && [ "$pProfileId" == "None" ]; do
-        pProfileId=`quantum cisco-policy-profile-list | awk 'BEGIN { res="No"; } /'"$name"'/ { res=$2; } END { print res;}'`
+        pProfileId=`quantum $CMD_POLICY_PROFILE_LIST | awk 'BEGIN { res="No"; } /'"$name"'/ { res=$2; } END { print res;}'`
         let c+=1
         sleep 1
     done

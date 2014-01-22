@@ -120,6 +120,45 @@ REMOVE_SUBINTERFACE = """
 """
 
 #=================================================#
+# Enable HSRP on a Subinterface
+# $(config)interface GigabitEthernet 2.500
+# $(config)vrf forwarding nrouter-e7d4y5
+# $(config)standby version 2
+# $(config)standby <group> priority <priority>
+# $(config)standby <group> ip <ip>
+#=================================================#
+SET_INTC_HSRP = """
+<config>
+        <cli-config-data>
+            <cmd>interface %s</cmd>
+            <cmd>ip vrf forwarding %s</cmd>
+            <cmd>standby version 2</cmd>
+            <cmd>standby %s priority %s</cmd>
+            <cmd>standby %s ip %s</cmd>
+        </cli-config-data>
+</config>
+
+"""
+
+#=================================================#
+# Remove HSRP on a Subinterface
+# $(config)interface GigabitEthernet 2.500
+# $(config)no standby version 2
+# $(config)no standby <group>
+#=================================================#
+REMOVE_INTC_HSRP = """
+<config>
+        <cli-config-data>
+            <cmd>interface %s</cmd>
+            <cmd>no standby %s</cmd>
+            <cmd>no standby version 2</cmd>
+        </cli-config-data>
+</config>
+
+"""
+
+
+#=================================================#
 # Create Access Control List
 # $(config)ip access-list standard acl_500
 # $(config)permit 192.168.0.1 255.255.255.0

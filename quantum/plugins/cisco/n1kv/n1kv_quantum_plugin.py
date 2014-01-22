@@ -46,6 +46,7 @@ from quantum.openstack.common import log as logging
 from quantum.openstack.common import rpc
 from quantum.openstack.common import uuidutils as uuidutils
 from quantum.openstack.common.rpc import proxy
+import quantum.plugins
 from quantum.plugins.cisco.common import cisco_constants as c_const
 from quantum.plugins.cisco.common import cisco_credentials_v2 as c_cred
 from quantum.plugins.cisco.common import cisco_exceptions
@@ -53,6 +54,7 @@ from quantum.plugins.cisco.common import config as c_conf
 from quantum.plugins.cisco.db import n1kv_db_v2
 from quantum.plugins.cisco.db import network_db_v2
 from quantum.plugins.cisco.extensions import n1kv_profile
+from quantum.plugins.cisco.l3.db import ha_db
 from quantum.plugins.cisco.l3.db import composite_agentschedulers_db as agt_sch_db
 from quantum.plugins.cisco.l3.db import l3_cfg_rpc_base
 from quantum.plugins.cisco.l3.db import l3_router_appliance_db
@@ -83,6 +85,7 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
 
 
 class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
+                          ha_db.HA_db_mixin,
                           l3_router_appliance_db.L3_router_appliance_db_mixin,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
@@ -105,7 +108,7 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
                                    "network_profile_binding", "quotas",
                                    "n1kv_profile", "network_profile",
                                    "policy_profile", "router", "credential",
-                                   "agent_scheduler"]
+                                   "agent_scheduler", "ha"]
 
     binding_view = "extension:port_binding:view"
     binding_set = "extension:port_binding:set"
@@ -120,10 +123,11 @@ class N1kvQuantumPluginV2(db_base_plugin_v2.QuantumDbPluginV2,
         n1kv_db_v2.initialize()
         c_cred.Store.initialize()
         # If no api_extensions_path is provided set the following
-        if not q_conf.CONF.api_extensions_path:
-            q_conf.CONF.set_override(
-                'api_extensions_path',
-                'extensions:quantum/plugins/cisco/extensions')
+        basepath = quantum.plugins.__path__[0]
+        ext_path = (basepath + '/cisco/extensions:' +
+                    basepath + '/cisco/l3/extensions:' +
+                    basepath + '/csr1kv_openvswitch/extensions')
+        q_conf.CONF.set_override('api_extensions_path', ext_path)
         self._setup_vsm()
         self._setup_rpc()
         #TODO(bobmel): Remove this over-ride of router scheduler default

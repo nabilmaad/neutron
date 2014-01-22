@@ -20,6 +20,11 @@ N1KV_PLUGIN = 1
 OVS_PLUGIN = 2
 ML2_PLUGIN = 3
 
+# Property for devices listed in plugin configuration file
+# that is set to True if the device supports routing.
+SUPPORTS_ROUTING = 'supports_routing'
+DEVICE_TYPE = 'device_type'
+
 # T1 port/network is for VXLAN
 T1_PORT_NAME = 't1_p:'
 # T2 port/network is for VLAN
@@ -39,7 +44,10 @@ T2_SUBNET_START_PREFX = '172.32.'
 # Hosting entities are of one of the following types.
 NETWORK_NODE_HOST = 'NetworkNamespaceNode'
 CSR1KV_HOST = 'CSR1kv'
-NEXUS3K_HOST = 'Nexus_3k'
+# For Nexus series (NX-OS) top of rack switches
+NEXUS_TOR_HOST = 'NexusToR'
+# For Nexus series (NX-OS) aggregation switches
+NEXUS_AGGR_HOST = 'NexusAggregationSwitch'
 
 # Router type is a new attribute for OsN Router
 # It can be set in Create operation then just Read.
@@ -49,8 +57,14 @@ CSR_ROUTER_TYPE = 'CSR1kv'
 NAMESPACE_ROUTER_TYPE = 'NetworkNamespace'
 HARDWARE_ROUTER_TYPE = 'Hardware'
 
-AGENT_TYPE_L3_CFG = 'L3 cfg agent'
 CSR1kv_SSH_NETCONF_PORT = 22
+NEXUS_SSH_NETCONF_PORT = 22
+
+# Time needed (in seconds) to boot a device
+CSR_BOOTING_TIME = 300
+NEXUS_BOOTING_TIME = 300
+
+AGENT_TYPE_L3_CFG = 'L3 cfg agent'
 
 # Topic for L3 configuration agent
 L3_CFG_AGENT = 'l3_cfg_agent'

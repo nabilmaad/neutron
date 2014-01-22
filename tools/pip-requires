@@ -21,4 +21,5 @@ oslo.config>=1.1.0
 # Cisco plugin dependencies
 configobj
 python-novaclient
+ciscoconfparse
 # End Cisco dependencies

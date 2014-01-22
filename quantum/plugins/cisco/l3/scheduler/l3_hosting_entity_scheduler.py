@@ -17,6 +17,7 @@
 # @author: Bob Melander, Cisco Systems, Inc.
 
 import math
+import random
 
 from oslo.config import cfg
 from sqlalchemy import and_
@@ -35,12 +36,14 @@ class L3HostingEntityScheduler(object):
     """Methods to schedule routers to hosting entities."""
     #TODO(bob-melander): Refactor - use driver per hosting entity type
     #TODO(bob-melander): Refactor - pool to new resource management class
-
+    #TODO(bob-melander): Make counters indexed on host_type
     # This variable only count tenant unbound slots
     _avail_svc_vm_slots = -1
     # Number of tenant unbound slots to keep available
     _desired_svc_vm_slots = (
         cfg.CONF.max_routers_per_csr1kv * cfg.CONF.standby_pool_size)
+    # The uuid of the most recently selected hosting entity
+    _id_last_selected_he = -1
 
     def sync_service_vm_pool_counters(self, context,
                                       host_type=cl3_const.CSR1KV_HOST):
@@ -124,8 +127,58 @@ class L3HostingEntityScheduler(object):
             self._avail_svc_vm_slots -= (num_deleted *
                                          cfg.CONF.max_routers_per_csr1kv)
 
-    def schedule_router_on_svm_hosting_entity(self, context, router,
-                                              host_type=cl3_const.CSR1KV_HOST):
+    def _get_hosting_entity_candidates(self, context, router, max_slots,
+                                       host_type):
+        """Returns a tuple with selected hosting entity and the number of
+        routers it hosts, i.e., the number of slots that are occupied."""
+
+        #TODO(bob-melander): Make indexed on host_type
+        # mysql> SELECT *, COUNT(router_id) as num_alloc
+        # FROM hostingentities AS he
+        # LEFT OUTER JOIN routerhostingentitybindings AS rhe
+        # ON he.id=rhe.hosting_entity_id
+        # WHERE host_type='CSR1kv' AND admin_state_up=TRUE AND
+        # (tenant_bound='t2' OR tenant_bound IS NULL)
+        # GROUP BY id HAVING (num_alloc < 4)
+        # ORDER BY created_at, num_alloc;
+
+        stmt = context.session.query(
+            l3_ra_db.HostingEntity,
+            func.count(l3_ra_db.RouterHostingEntityBinding.router_id).
+            label('num_alloc'))
+        stmt = stmt.outerjoin(
+            l3_ra_db.RouterHostingEntityBinding,
+            l3_ra_db.HostingEntity.id ==
+            l3_ra_db.RouterHostingEntityBinding.hosting_entity_id)
+        stmt = stmt.filter(and_(l3_ra_db.HostingEntity.host_type == host_type,
+                                l3_ra_db.HostingEntity.admin_state_up == True))
+        stmt = stmt.filter(
+            or_(l3_ra_db.HostingEntity.tenant_bound == None,
+                l3_ra_db.HostingEntity.tenant_bound == router['tenant_id']))
+        stmt = stmt.group_by(l3_ra_db.HostingEntity.id)
+        if router.get('share_host', True):
+            query = stmt.having(func.count(
+                l3_ra_db.RouterHostingEntityBinding.router_id) < max_slots)
+            query = query.order_by(
+                l3_ra_db.HostingEntity.created_at,
+                func.count(l3_ra_db.RouterHostingEntityBinding.router_id))
+        else:
+            # TODO(bob-melander): enhance so that tenant unbound
+            # hosting entities that only host routers for this tenant
+            # are also included
+            stmt = stmt.subquery()
+            query = context.session.query(stmt)
+            query = query.filter(or_(and_(stmt.c.tenant_bound == None,
+                                          stmt.c.num_alloc == 0),
+                                     and_(stmt.c.tenant_bound ==
+                                          router['tenant_id'],
+                                          stmt.c.num_alloc < max_slots)))
+            query = query.order_by(stmt.c.created_at, stmt.c.num_alloc)
+        return query.all()
+
+    def schedule_router_on_svm_hosting_entity(
+            self, context, router, max_slots=cfg.CONF.max_routers_per_csr1kv,
+            host_type=cl3_const.CSR1KV_HOST):
         """Schedules a router on a service VM hosting entity.
         Returns a tuple with selected hosting entity and the number of routers
         it hosts, i.e., the number of slots that are occupied."""
@@ -156,8 +209,7 @@ class L3HostingEntityScheduler(object):
         stmt = stmt.group_by(l3_ra_db.HostingEntity.id)
         if router.get('share_host', True):
             query = stmt.having(func.count(
-                l3_ra_db.RouterHostingEntityBinding.router_id) <
-                cfg.CONF.max_routers_per_csr1kv)
+                l3_ra_db.RouterHostingEntityBinding.router_id) < max_slots)
             query = query.order_by(
                 l3_ra_db.HostingEntity.created_at,
                 func.count(l3_ra_db.RouterHostingEntityBinding.router_id))
@@ -171,8 +223,7 @@ class L3HostingEntityScheduler(object):
                                           stmt.c.num_alloc == 0),
                                      and_(stmt.c.tenant_bound ==
                                           router['tenant_id'],
-                                          stmt.c.num_alloc <
-                                          cfg.CONF.max_routers_per_csr1kv)))
+                                          stmt.c.num_alloc < max_slots)))
             query = query.order_by(stmt.c.created_at, stmt.c.num_alloc)
         host_ents = query.all()
         if len(host_ents) == 0:
@@ -184,6 +235,20 @@ class L3HostingEntityScheduler(object):
             # longest time. If more than one exists, then pick the one
             # with the least occupied slots.
             return host_ents[0]
+
+    def schedule_router_on_N7k_hosting_entity(
+            self, context, router, host_type=cl3_const.NEXUS_AGGR_HOST):
+        candidates = self._get_hosting_entity_candidates(
+            context, router, cfg.CONF.max_routers_per_N7k, host_type)
+        if len(candidates) == 1:
+            return candidates[0]
+        elif len(candidates) > 1:
+            selected_he = random.choice(candidates)
+            while selected_he[0]['id'] == self._id_last_selected_he:
+                selected_he = random.choice(candidates)
+            self._id_last_selected_he = selected_he[0]['id']
+            return selected_he
+        return
 
     def schedule_router_on_hosting_entity(self, plugin, context, router,
                                           r_he_binding):
@@ -228,6 +293,13 @@ class L3HostingEntityScheduler(object):
                     context.session.add(r_he_binding)
                     self.maintain_service_vm_pool(plugin, context)
             context.session.expire(r_he_binding)
+        elif router['router_type'] == cl3_const.HARDWARE_ROUTER_TYPE:
+            with context.session.begin(subtransactions=True):
+                hosting_ent_info = self.schedule_router_on_N7k_hosting_entity(
+                    context, router)
+                if hosting_ent_info is not None:
+                    r_he_binding.hosting_entity_id = hosting_ent_info[0]['id']
+                    context.session.add(r_he_binding)
 
     def unschedule_router_from_hosting_entity(self, plugin, context, router,
                                               hosting_entity_db):
@@ -264,3 +336,5 @@ class L3HostingEntityScheduler(object):
                 inc_by = 1
             self._avail_svc_vm_slots += inc_by
             self.maintain_service_vm_pool(plugin, context)
+        if router['router_type'] == cl3_const.HARDWARE_ROUTER_TYPE:
+            pass

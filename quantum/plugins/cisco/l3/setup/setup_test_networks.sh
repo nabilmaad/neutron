@@ -17,6 +17,18 @@ testSubnetNames=(bob_test_subnet1 bob_test_subnet2 bob_test_subnet3 bob_test_sub
 testSubnetCIDRs=('10.0.11.0/24' '10.0.12.0/24' '10.0.13.0/24' '10.0.14.0/24' '10.0.15.0/24' '10.0.16.0/24' '10.0.21.0/24')
 testSubnetOpts=('' '' '' '' '' '' '--disable-dhcp --allocation-pool start=10.0.21.10,end=10.0.21.254')
 
+cisco=`quantum help | awk '/network-profile-create/ { if ($1 == "network-profile-create") { print "No"; } else { print "Yes"; }}'`
+if [ "$cisco" == "Yes" ]; then
+    CMD_NETWORK_PROFILE_LIST=cisco-network-profile-list
+    CMD_NETWORK_PROFILE_CREATE=cisco-network-profile-create
+    CMD_POLICY_PROFILE_LIST=cisco-policy-profile-list
+else
+    CMD_NETWORK_PROFILE_LIST=network-profile-list
+    CMD_NETWORK_PROFILE_CREATE=network-profile-create
+    CMD_POLICY_PROFILE_LIST=policy-profile-list
+fi
+
+
 function get_network_profile_id() {
     index=$1
     name=$2
@@ -27,7 +39,7 @@ function get_network_profile_id() {
     local c=0
     local opt_param=
 
-    nProfileId[$index]=`quantum cisco-network-profile-list | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
+    nProfileId[$index]=`quantum CMD_NETWORK_PROFILE_LIST | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
     if [ "${nProfileId[$index]}" == "None" ]; then
         echo "   Network profile $name does not exist. Creating it."
         if [ "$subType" != "None" ]; then
@@ -36,10 +48,10 @@ function get_network_profile_id() {
         if [ "$segRange" != "None" ]; then
             opt_param=$opt_param" --segment_range $segRange"
         fi
-        quantum cisco-network-profile-create --physical_network $phyNet $opt_param $name $type
+        quantum $CMD_NETWORK_PROFILE_CREATE --physical_network $phyNet $opt_param $name $type
     fi
     while [ $c -le 5 ] && [ "$nProfileId" == "None" ]; do
-        nProfileId=`quantum cisco-network-profile-list | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
+        nProfileId=`quantum CMD_NETWORK_PROFILE_LIST | awk 'BEGIN { res="None"; } /'"$name"'/ { res=$2; } END { print res;}'`
         let c+=1
     done
 }
