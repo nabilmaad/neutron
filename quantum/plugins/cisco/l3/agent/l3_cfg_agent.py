@@ -303,6 +303,10 @@ class RouterInfo(object):
         self.use_namespaces = use_namespaces
         self.router = router
         self.routes = []
+        self.ha_info = None
+        # Set 'ha_info' if present
+        if router.get('ha_info') is not None:
+            self.ha_info = router['ha_info']
 
     @property
     def router(self):
@@ -711,6 +715,7 @@ class L3NATAgent(manager.Manager):
     @periodic_task.periodic_task
     @lockutils.synchronized('l3-agent', 'neutron-')
     def _sync_routers_task(self, context):
+        # Hareesh: Disabled for now. Need to revisit
         # if self.services_sync:
         #     super(L3NATAgent, self).process_services_sync(context)
         LOG.debug(_("Starting _sync_routers_task - fullsync:%s"),
@@ -731,6 +736,23 @@ class L3NATAgent(manager.Manager):
         except Exception:
             LOG.exception(_("Failed synchronizing routers"))
             self.fullsync = True
+        else:
+            LOG.debug(_("Full sync is False. Processing backlog."))
+            res = self._he.check_backlogged_hosting_entities()
+            if res['reachable']:
+                #Fetch routers for now reachable HE's
+                LOG.debug(_("Requesting routers for hosting entities: %s "
+                            "that are now responding."), res['reachable'])
+                routers = self.plugin_rpc.get_routers(
+                    context, router_id=None, he_ids=res['reachable'])
+                self._process_routers(routers, all_routers=True)
+            if res['dead']:
+                LOG.debug(_("Reporting dead hosting entities: %s"),
+                          res['dead'])
+                # Process dead HE's
+                self.plugin_rpc.report_dead_hosting_entities(
+                    context, he_ids=res['dead'])
+
 
     def after_start(self):
         LOG.info(_("L3 Cfg Agent started"))
