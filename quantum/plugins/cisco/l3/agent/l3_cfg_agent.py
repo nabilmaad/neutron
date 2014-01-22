@@ -55,9 +55,14 @@ RPC_LOOP_INTERVAL = 1
 """
 Change log:
  Hareesh - 9th Dec 2013:
-    Bringing l3-agent updated with icehouse changes upto
+    Bringing l3-cfg-agent updated with icehouse changes upto
     commit id SHA:c1d7d86fc477a27c452a3d5e624878fef0e264fa
     Merge "l3_agent: make process_router more robust"
+ Hareesh - 22nd Jan 2013:
+    Updated to include changes upto jan 13
+    (Merge "L3 Agent can handle many external networks", commit:6a2ec32805ee1743296a12d8267f37ee8d10cd9f)
+    Note: Skipped floatingip refactoring now, for further investigation.
+    (Refactor configuring of floating ips on a router, commit: a65188fab01f29d095031abbc8d1d194548cd8be)
 """
 
 
@@ -354,10 +359,9 @@ class L3NATAgent(manager.Manager):
                    help=_("TCP Port used by Quantum metadata namespace "
                           "proxy.")),
         cfg.IntOpt('send_arp_for_ha',
-                   default=3,
-                   help=_("Send this many gratuitous ARPs for HA setup, "
-                          "set it below or equal to 0 to disable this "
-                          "feature.")),
+                   default=0,
+                   help=_("Send this many gratuitous ARPs for HA setup, if "
+                          "less than or equal to 0, the feature is disabled")),
         # Hareesh : Temporarily setting this to False for use in CSR env
         cfg.BoolOpt('use_namespaces', default=True,
                     help=_("Allow overlapping IP.")),
@@ -388,15 +392,7 @@ class L3NATAgent(manager.Manager):
         self.root_helper = config.get_root_helper(self.conf)
         self.router_info = {}
 
-        if not self.conf.interface_driver:
-            raise SystemExit(_('An interface driver must be specified'))
-        try:
-            self.driver = importutils.import_object(self.conf.interface_driver,
-                                                    self.conf)
-        except Exception:
-            msg = _("Error importing interface driver "
-                    "'%s'") % self.conf.interface_driver
-            raise SystemExit(msg)
+        self._check_config_params()
 
         self.context = context.get_admin_context_without_session()
         self.plugin_rpc = L3PluginApi(topics.PLUGIN, host)
@@ -411,17 +407,33 @@ class L3NATAgent(manager.Manager):
         self.rpc_loop.start(interval=RPC_LOOP_INTERVAL)
         super(L3NATAgent, self).__init__(host=self.conf.host)
 
+    def _check_config_params(self):
+        """Check items in configuration files.
+
+        Check for required and invalid configuration items.
+        The actual values are not verified for correctness.
+        """
+        #ToDo(Hareesh): Placeholder for parity with l3 agent.
+        pass
+
     def _fetch_external_net_id(self):
         """Find UUID of single external network for this agent."""
         if self.conf.gateway_external_network_id:
             return self.conf.gateway_external_network_id
+
+        # Cfg agent doesn't use external_network_bridge to handle external
+        # networks, so bridge_mappings with provider networks will be used
+        # and the cfg agent is able to handle any external networks.
+        if not self.conf.external_network_bridge:
+            return
+
         try:
             return self.plugin_rpc.get_external_network_id(self.context)
         except rpc_common.RemoteError as e:
             if e.exc_type == 'TooManyExternalNetworks':
                 msg = _(
                     "The 'gateway_external_network_id' option must be "
-                    "configured for this agent as Quantum has more than "
+                    "configured for this agent as Neutron has more than "
                     "one external network.")
                 raise Exception(msg)
             else:
@@ -437,6 +449,8 @@ class L3NATAgent(manager.Manager):
     def _router_removed(self, router_id, deconfigure=True):
         ri = self.router_info.get(router_id)
         if ri is None:
+            LOG.warn(_("Info for router %s were not found. "
+                       "Skipping router removal"), router_id)
             return
         ri.router['gw_port'] = None
         ri.router[l3_constants.INTERFACE_KEY] = []
@@ -643,7 +657,8 @@ class L3NATAgent(manager.Manager):
             ex_net_id = (r['external_gateway_info'] or {}).get('network_id')
             if not ex_net_id and not self.conf.handle_internal_only_routers:
                 continue
-            if ex_net_id and ex_net_id != target_ex_net_id:
+            if (target_ex_net_id and ex_net_id and
+                    ex_net_id != target_ex_net_id):
                 continue
             cur_router_ids.add(r['id'])
             if not self._he.is_hosting_entity_reachable(r['id'], r):
