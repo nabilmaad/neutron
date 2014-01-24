@@ -21,7 +21,6 @@
 
 import eventlet
 
-from neutron.agent import securitygroups_rpc as sg_rpc
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.api.rpc.agentnotifiers import l3_rpc_agent_api
 from neutron.api.v2 import attributes
@@ -36,13 +35,13 @@ from neutron.db import dhcp_rpc_base
 from neutron.db import external_net_db
 from neutron.db import l3_db
 from neutron.db import l3_rpc_base
+from neutron.db import portbindings_db
 from neutron.db import quota_db
-from neutron.db import securitygroups_rpc_base as sg_db_rpc
+from neutron.extensions import portbindings
 from neutron.extensions import providernet
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import rpc
-from neutron.openstack.common.rpc import proxy
 from neutron.openstack.common import uuidutils as uuidutils
 from neutron.plugins.cisco.common import cisco_constants as c_const
 from neutron.plugins.cisco.common import cisco_credentials_v2 as c_cred
@@ -58,17 +57,13 @@ from neutron.plugins.common import constants as svc_constants
 LOG = logging.getLogger(__name__)
 
 
-class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
-#                       l3_rpc_base.L3RpcCallbackMixin,
-                       sg_db_rpc.SecurityGroupServerRpcCallbackMixin):
+class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin):
+#                       l3_rpc_base.L3RpcCallbackMixin):
 
     """Class to handle agent RPC calls."""
 
     # Set RPC API version to 1.1 by default.
     RPC_API_VERSION = '1.1'
-
-    def __init__(self, notifier):
-        self.notifier = notifier
 
     def create_rpc_dispatcher(self):
         """Get the rpc dispatcher for this rpc manager.
@@ -80,57 +75,10 @@ class N1kvRpcCallbacks(dhcp_rpc_base.DhcpRpcCallbackMixin,
                                           agents_db.AgentExtRpcCallback()])
 
 
-class AgentNotifierApi(proxy.RpcProxy,
-                       sg_rpc.SecurityGroupAgentRpcApiMixin):
-
-    """Agent side of the N1kv rpc API.
-
-    API version history:
-        1.0 - Initial version.
-    """
-
-    BASE_RPC_API_VERSION = '1.0'
-
-    def __init__(self, topic):
-        super(AgentNotifierApi, self).__init__(
-            topic=topic, default_version=self.BASE_RPC_API_VERSION)
-        self.topic_network_delete = topics.get_topic_name(topic,
-                                                          topics.NETWORK,
-                                                          topics.DELETE)
-        self.topic_port_update = topics.get_topic_name(topic,
-                                                       topics.PORT,
-                                                       topics.UPDATE)
-        self.topic_vxlan_update = topics.get_topic_name(topic,
-                                                        c_const.TUNNEL,
-                                                        topics.UPDATE)
-
-    def network_delete(self, context, network_id):
-        self.fanout_cast(context,
-                         self.make_msg('network_delete',
-                                       network_id=network_id),
-                         topic=self.topic_network_delete)
-
-    def port_update(self, context, port, network_type, segmentation_id,
-                    physical_network):
-        self.fanout_cast(context,
-                         self.make_msg('port_update',
-                                       port=port,
-                                       network_type=network_type,
-                                       segmentation_id=segmentation_id,
-                                       physical_network=physical_network),
-                         topic=self.topic_port_update)
-
-    def vxlan_update(self, context, vxlan_ip, vxlan_id):
-        self.fanout_cast(context,
-                         self.make_msg('vxlan_update',
-                                       vxlan_ip=vxlan_ip,
-                                       vxlan_id=vxlan_id),
-                         topic=self.topic_vxlan_update)
-
-
 class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                           external_net_db.External_net_db_mixin,
 #                          l3_db.L3_NAT_db_mixin,
+                          portbindings_db.PortBindingMixin,
                           n1kv_db_v2.NetworkProfile_db_mixin,
                           n1kv_db_v2.PolicyProfile_db_mixin,
                           network_db_v2.Credential_db_mixin,
@@ -151,16 +99,22 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
     supported_extension_aliases = ["provider", "agent",
                                    "n1kv_profile", "network_profile",
                                    "policy_profile", "external-net", #"router",
-                                   "credential", "quotas"]
+                                   "binding", "credential", "quotas"]
 
     def __init__(self, configfile=None):
         """
         Initialize Nexus1000V Neutron plugin.
 
-        1. Initialize Nexus1000v and Credential DB
-        2. Establish communication with Cisco Nexus1000V
+        1. Initialize VIF type to OVS
+        2. Initialize Nexus1000v and Credential DB
+        3. Establish communication with Cisco Nexus1000V
         """
-        n1kv_db_v2.initialize()
+        super(N1kvNeutronPluginV2, self).__init__()
+        self.base_binding_dict = {
+            portbindings.VIF_TYPE: portbindings.VIF_TYPE_OVS,
+            portbindings.CAPABILITIES: {
+                portbindings.CAP_PORT_FILTER:
+                'security-group' in self.supported_extension_aliases}}
         c_cred.Store.initialize()
         self._initialize_network_ranges()
         self._setup_vsm()
@@ -171,14 +125,12 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         self.service_topics = {svc_constants.CORE: topics.PLUGIN}#,
 #                               svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
         self.conn = rpc.create_connection(new=True)
-        self.notifier = AgentNotifierApi(topics.AGENT)
-        self.callbacks = N1kvRpcCallbacks(self.notifier)
-        self.dispatcher = self.callbacks.create_rpc_dispatcher()
+        self.dispatcher = N1kvRpcCallbacks().create_rpc_dispatcher()
         for svc_topic in self.service_topics.values():
             self.conn.create_consumer(svc_topic, self.dispatcher, fanout=False)
-        # Consume from all consumers in a thread
         self.dhcp_agent_notifier = dhcp_rpc_agent_api.DhcpAgentNotifyAPI()
 #        self.l3_agent_notifier = l3_rpc_agent_api.L3AgentNotify
+        # Consume from all consumers in a thread
         self.conn.consume_in_thread()
 
     def _setup_vsm(self):
@@ -1259,6 +1211,9 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                                                   port)
                 n1kv_db_v2.add_port_binding(session, pt['id'], profile_id)
                 self._extend_port_dict_profile(context, pt)
+                self._process_portbindings_create_and_update(context,
+                                                             port['port'],
+                                                             pt)
             try:
                 self._send_create_port_request(context, pt)
             except(cisco_exceptions.VSMError,
@@ -1277,11 +1232,14 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         :returns: updated port object
         """
         LOG.debug(_("Update port: %s"), id)
-        if self.agent_vsm:
-            super(N1kvNeutronPluginV2, self).get_port(context, id)
-        port = super(N1kvNeutronPluginV2, self).update_port(context, id, port)
-        self._extend_port_dict_profile(context, port)
-        return port
+        with context.session.begin(subtransactions=True):
+            updated_port = super(N1kvNeutronPluginV2,
+                                 self).update_port(context, id, port)
+            self._process_portbindings_create_and_update(context,
+                                                         port['port'],
+                                                         updated_port)
+            self._extend_port_dict_profile(context, updated_port)
+        return updated_port
 
     def delete_port(self, context, id, l3_port_check=True):
         """
@@ -1289,7 +1247,6 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
         :param context: neutron api request context
         :param id: UUID representing the port to delete
-        :returns: deleted port object
         """
         # if needed, check to see if this is a port owned by
         # and l3-router.  If so, we should prevent deletion.
