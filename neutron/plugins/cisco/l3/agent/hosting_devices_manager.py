@@ -131,14 +131,14 @@ class HostingDevicesManager(object):
     def pop(self, he_id):
         self._drivers.pop(he_id, None)
 
-    def get_backlogged_hosting_entities(self):
-        backlogged_hosting_entities = {}
+    def get_backlogged_hosting_devices(self):
+        backlogged_hosting_devices = {}
         for (he_id, data) in self.backlog_hosting_devices.items():
-            backlogged_hosting_entities[he_id] = {
+            backlogged_hosting_devices[he_id] = {
                 'affected routers': data['routers']}
-        return backlogged_hosting_entities
+        return backlogged_hosting_devices
 
-    def is_hosting_entity_reachable(self, router_id, router):
+    def is_hosting_device_reachable(self, router_id, router):
         hd = router['hosting_device']
         hd_id = hd['id']
         he_mgmt_ip = hd['ip_address']
@@ -172,8 +172,8 @@ class HostingDevicesManager(object):
             self.backlog_hosting_devices[hd_id]['routers'].append(router_id)
         return False
 
-    def check_backlogged_hosting_entities(self):
-        """"Checks the status of backlogged hosting entities.
+    def check_backlogged_hosting_devices(self):
+        """"Checks the status of backlogged hosting devices.
         Has the intelligence to give allowance for the booting time for
         newly spun up instances. Sends back a response dict of the format:
         {'reachable': [<he_id>,..], 'dead': [<he_id>,..]}
@@ -184,28 +184,28 @@ class HostingDevicesManager(object):
             he = self.backlog_hosting_devices[he_id]['he']
             if not timeutils.is_older_than(he['created_at'],
                                            he['booting_time']):
-                LOG.info(_("Hosting entity: %(he_id)s @ %(ip)s hasn't passed "
+                LOG.info(_("Hosting device: %(he_id)s @ %(ip)s hasn't passed "
                            "minimum boot time. Skipping it. "),
                          {'he_id': he_id, 'ip': he['ip_address']})
                 continue
-            LOG.info(_("Checking hosting entity: %(he_id)s @ %(ip)s for "
+            LOG.info(_("Checking hosting device: %(he_id)s @ %(ip)s for "
                        "reachability."), {'he_id': he_id,
                                           'ip': he['ip_address']})
             if self._is_pingable(he['ip_address']):
                 he.pop('backlog_insertion_ts', None)
                 del self.backlog_hosting_devices[he_id]
                 response_dict['reachable'].append(he_id)
-                LOG.info(_("Hosting entity: %(he_id)s @ %(ip)s is now "
+                LOG.info(_("Hosting device: %(he_id)s @ %(ip)s is now "
                            "reachable. Adding it to response"),
                          {'he_id': he_id, 'ip': he['ip_address']})
             else:
-                LOG.info(_("Hosting entity: %(he_id)s @ %(ip)s still not "
+                LOG.info(_("Hosting device: %(he_id)s @ %(ip)s still not "
                            "reachable "), {'he_id': he_id,
                                            'ip': he['ip_address']})
                 if timeutils.is_older_than(
                         he['backlog_insertion_ts'],
                         int(cfg.CONF.hosting_device_dead_timeout)):
-                    LOG.debug(_("Hosting entity: %(he_id)s @ %(ip)s hasn't "
+                    LOG.debug(_("Hosting device: %(he_id)s @ %(ip)s hasn't "
                                 "been reachable for the last %(time)d "
                                 "seconds. Marking it dead."),
                               {'he_id': he_id, 'ip': he['ip_address'],

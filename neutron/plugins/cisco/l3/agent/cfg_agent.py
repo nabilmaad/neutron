@@ -122,11 +122,11 @@ class CiscoCfgAgent(manager.Manager):
         cfg.StrOpt('gateway_external_network_id', default='',
                    help=_("UUID of external network for routers implemented "
                           "by the agents.")),
-        cfg.BoolOpt('use_hosting_entities', default=True,
-                    help=_("Allow hosting entities for routing service.")),
-        cfg.IntOpt('hosting_entity_dead_timeout', default=300,
+        cfg.BoolOpt('use_hosting_devices', default=True,
+                    help=_("Allow hosting devices for routing service.")),
+        cfg.IntOpt('hosting_device_dead_timeout', default=300,
                    help=_("The time in seconds until a backlogged "
-                          "hosting entity is presumed dead ")),
+                          "hosting device is presumed dead ")),
     ]
 
     def __init__(self, host, conf=None):
@@ -326,8 +326,8 @@ class CiscoCfgAgent(manager.Manager):
                 routers = [router['id'] for router in routers]
             self.updated_routers.update(routers)
 
-    def hosting_entity_removed(self, context, payload):
-        """RPC Notification that a hosting entity was removed.
+    def hosting_device_removed(self, context, payload):
+        """RPC Notification that a hosting device was removed.
         Expected Payload format:
         {
              'hosting_data': {'he_id1': {'routers': [id1, id2, ...]},
@@ -336,7 +336,7 @@ class CiscoCfgAgent(manager.Manager):
         }
         """
         for he_id, resource_data in payload['hosting_data'].items():
-            LOG.debug(_("Hosting entity removal data: %s "),
+            LOG.debug(_("Hosting device removal data: %s "),
                       payload['hosting_data'])
             for router_id in resource_data.get('routers', []):
                 self._router_removed(router_id, payload['deconfigure'])
@@ -383,8 +383,8 @@ class CiscoCfgAgent(manager.Manager):
                     ex_net_id != target_ex_net_id):
                 continue
             cur_router_ids.add(r['id'])
-            if not self._hdm.is_hosting_entity_reachable(r['id'], r):
-                LOG.info(_("Router: %(id)s is on unreachable hosting entity. "
+            if not self._hdm.is_hosting_device_reachable(r['id'], r):
+                LOG.info(_("Router: %(id)s is on unreachable hosting device. "
                          "Skip processing it."), {'id': r['id']})
                 continue
             if r['id'] not in self.router_info:
@@ -451,19 +451,19 @@ class CiscoCfgAgent(manager.Manager):
             self.fullsync = True
         else:
             LOG.debug(_("Full sync is False. Processing backlog."))
-            res = self._hdm.check_backlogged_hosting_entities()
+            res = self._hdm.check_backlogged_hosting_devices()
             if res['reachable']:
                 #Fetch routers for this reachable Hosting Device
-                LOG.debug(_("Requesting routers for hosting entities: %s "
+                LOG.debug(_("Requesting routers for hosting devices: %s "
                             "that are now responding."), res['reachable'])
                 routers = self.plugin_rpc.get_routers(
                     context, router_ids=None, he_ids=res['reachable'])
                 self._process_routers(routers, all_routers=True)
             if res['dead']:
-                LOG.debug(_("Reporting dead hosting entities: %s"),
+                LOG.debug(_("Reporting dead hosting devices: %s"),
                           res['dead'])
                 # Process dead Hosting Device
-                self.plugin_rpc.report_dead_hosting_entities(
+                self.plugin_rpc.report_dead_hosting_devices(
                     context, he_ids=res['dead'])
 
     def after_start(self):
@@ -509,7 +509,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
                 # 'gateway_external_network_id':
                 # self.conf.gateway_external_network_id,
                 # 'interface_driver': self.conf.interface_driver,
-                'hosting_entity_drivers': {
+                'hosting_device_drivers': {
                     cl3_constants.CSR1KV_HOST:
                     'neutron.plugins.cisco.l3.agent.csr1000v.'
                     'cisco_csr_network_driver.CSR1000vRoutingDriver'}},
@@ -544,14 +544,14 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
                 num_he_routers[he['id']] = num_he_routers.get(he['id'], 0) + 1
         for (he_id, num) in num_he_routers.items():
             routers_per_he[he_id] = {'routers': num}
-        non_responding = self._hdm.get_backlogged_hosting_entities()
+        non_responding = self._hdm.get_backlogged_hosting_devices()
         configurations = self.agent_state['configurations']
         configurations['total routers'] = num_routers
         configurations['total ex_gw_ports'] = num_ex_gw_ports
         configurations['total interfaces'] = num_interfaces
         configurations['total floating_ips'] = num_floating_ips
-        configurations['hosting_entities'] = routers_per_he
-        configurations['non_responding_hosting_entities'] = non_responding
+        configurations['hosting_devices'] = routers_per_he
+        configurations['non_responding_hosting_devices'] = non_responding
         try:
             self.state_rpc.report_state(self.context, self.agent_state,
                                         self.use_call)
