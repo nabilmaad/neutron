@@ -25,6 +25,7 @@ from oslo.config import cfg
 
 from neutron import manager
 from neutron.openstack.common import log as logging
+from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.l3.common import constants
 
 LOG = logging.getLogger(__name__)
@@ -87,7 +88,8 @@ class ServiceVMManager:
             # plugin dependent, only hosting device type dependent.
             cfg_files = hosting_device_drv.create_configdrive_files(
                 context, mgmt_port)
-            files = {label: open(name) for label, name in cfg_files.items()}
+            files = dict((label, open(name)) for label, name in
+                         cfg_files.items())
         except IOError:
             return None
 
@@ -143,7 +145,8 @@ class ServiceVMManager:
             # plugin dependent, only hosting device type dependent.
             cfg_files = hosting_device_drv.create_configdrive_files(
                 context, mgmt_port)
-            files = {label: open(name) for label, name in cfg_files.items()}
+            files = dict((label, open(name)) for label, name in
+                         cfg_files.items())
         except IOError:
             return None
 

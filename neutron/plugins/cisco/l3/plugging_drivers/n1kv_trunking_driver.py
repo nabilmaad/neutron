@@ -405,8 +405,8 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         query = context.session.query(HostedHostingPortBinding)
         query = query.filter(
             HostedHostingPortBinding.hosting_port_id == hosting_port_id)
-        return {hhpb.router_port['network_id']: hhpb.segmentation_tag
-                for hhpb in query}
+        return dict((hhpb.router_port['network_id'], hhpb.segmentation_tag)
+                    for hhpb in query)
 
     def _get_unused_service_vm_trunk_port(self, context, hd_id, network_type):
         name = (n1kv_const.T2_PORT_NAME if network_type == 'vlan'
