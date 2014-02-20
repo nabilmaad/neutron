@@ -18,24 +18,19 @@
 
 import mock
 from oslo.config import cfg
-import webtest
 
-from neutron.api.v2 import attributes
-from neutron import context
-from neutron.common.test_lib import test_config
 from neutron.common import exceptions as n_exc
+from neutron import context
 from neutron.db import api as qdbapi
 from neutron.db import db_base_plugin_v2
 from neutron.db import model_base
 from neutron.extensions import external_net
 from neutron.manager import NeutronManager
-from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common.notifier import api as notifier_api
 from neutron.openstack.common.notifier import test_notifier
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.l3.common import constants as cl3_const
-from neutron.plugins.cisco.l3.db import composite_agentschedulers_db as agt_sch_db
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db
 from neutron.plugins.cisco.l3.db import l3_router_appliance_db
 from neutron.plugins.common import constants
@@ -55,12 +50,6 @@ class TestL3RouterAppliancePlugin(db_base_plugin_v2.CommonDbMixin,
 
     def __init__(self):
         qdbapi.register_models(base=model_base.BASEV2)
-        self.hosting_scheduler = importutils.import_object(
-            cfg.CONF.hosting_scheduler_driver)
-
-    @classmethod
-    def resetPlugin(cls):
-        cls.hosting_scheduler = None
 
     def get_plugin_type(self):
         return constants.L3_ROUTER_NAT
@@ -78,9 +67,7 @@ def dispatch_service_vm_mock(self, context, instance_name, vm_image,
     try:
         # Assumption for now is that this does not need to be
         # plugin dependent, only hosting device type dependent.
-        cfg_files = hosting_device_drv.create_configdrive_files(
-            context, mgmt_port)
-        files = {label: name for label, name in cfg_files.items()}
+        hosting_device_drv.create_configdrive_files(context, mgmt_port)
     except IOError:
         return None
 
@@ -97,11 +84,11 @@ def dispatch_service_vm_mock(self, context, instance_name, vm_image,
     myserver = {'server': {'adminPass': "MVk5HPrazHcG",
                 'id': vm_id,
                 'links': [{'href': "http://openstack.example.com/v2/"
-                                    "openstack/servers/" + vm_id,
+                                   "openstack/servers/" + vm_id,
                            'rel': "self"},
-                            {'href': "http://openstack.example.com/"
-                                      "openstack/servers/" + vm_id,
-                             'rel': "bookmark"}]}}
+                          {'href': "http://openstack.example.com/"
+                                   "openstack/servers/" + vm_id,
+                           'rel': "bookmark"}]}}
 
     return myserver['server']
 
@@ -143,9 +130,9 @@ def get_hosting_device_template_mock(self, context, host_type):
             'booting_time': cfg.CONF.csr1kv_booting_time,
             'capacities': 'router:' + str(cfg.CONF.max_routers_per_csr1kv),
             'tenant_bound': None,
-            'device_driver': 'neutron.plugins.cisco.l3.tests.unit.'
+            'device_driver': 'neutron.plugins.cisco.l3.test.'
                              'hd_dummy_driver.DummyHostingDeviceDriver',
-            'plugging_driver': 'neutron.plugins.cisco.l3.tests.unit.'
+            'plugging_driver': 'neutron.plugins.cisco.l3.test.'
                                'plugging_dummy_driver.DummyTrunkingPlugDriver',
             'cfg_agent_driver': 'router:neutron.plugins.cisco.l3.agent.'
                                 'csr1000v.cisco_csr_network_driver.'
@@ -162,8 +149,8 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
         plugin = 'neutron.tests.unit.test_l3_plugin.TestNoL3NatPlugin'
         # the L3 service plugin
         l3_plugin = (
-            'neutron.plugins.cisco.l3.tests.unit.'
-            'test_l3_router_appliance_plugin.TestL3RouterAppliancePlugin')
+            'neutron.tests.unit.cisco.l3.test_l3_router_appliance_plugin.'
+            'TestL3RouterAppliancePlugin')
         service_plugins = {'l3_plugin_name': l3_plugin}
 
         # for these tests we need to enable overlapping ips
@@ -215,6 +202,13 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
             get_hosting_device_template_mock)
         self.get_hosting_device_template_fcn_p.start()
 
+        sched_mock = mock.Mock()
+        sched_mock.schedule_router_on_hosting_device.return_value = None
+        self.sched = mock.patch(
+            'neutron.plugins.cisco.l3.db.l3_router_appliance_db.'
+            'L3_router_appliance_db_mixin.hosting_scheduler', sched_mock)
+        self.sched.start()
+
         # A management network/subnet is needed
         self.mgmt_nw = self._make_network(
             self.fmt, cfg.CONF.management_network, True,
@@ -234,12 +228,10 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
                 self._delete('ports', p['id'])
             self._delete('subnets', self.mgmt_subnet['subnet']['id'])
             self._delete('networks', self.mgmt_nw['network']['id'])
-        l3_svc_plugin = NeutronManager.get_service_plugins()[
-            constants.L3_ROUTER_NAT]
-        l3_svc_plugin.resetPlugin()
         self.delete_svc_vm_fcn_p.stop()
         self.dispatch_svc_vm_fcn_p.stop()
         self.tenant_id_fcn_p.stop()
+        self.sched.stop()
         super(test_l3_plugin.L3NatDBSepTestCase, self).tearDown()
 
     def test_get_network_succeeds_without_filter(self):

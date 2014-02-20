@@ -16,7 +16,7 @@
 #
 # @author: Bob Melander, Cisco Systems, Inc.
 
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta
 
 
 class HostingDeviceDriver(object):

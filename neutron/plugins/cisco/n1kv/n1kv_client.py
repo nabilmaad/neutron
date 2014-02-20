@@ -340,8 +340,22 @@ class Client(object):
                 # Bob Melander: Temporary workaround for VSM bug.
                 'description': subnet['name'] or "DUMMY_NAME",
                 'gateway': subnet['gateway_ip'],
+                'dhcp': subnet['enable_dhcp'],
+                'dnsServersList': subnet['dns_nameservers'],
                 'networkAddress': network_address,
                 'tenantId': subnet['tenant_id']}
+        return self._post(self.ip_pool_path % subnet['id'],
+                          body=body)
+
+    def update_ip_pool(self, subnet):
+        """
+        Update an ip-pool on the VSM.
+
+        :param subnet: subnet dictionary
+        """
+        body = {'description': subnet['name'],
+                'dhcp': subnet['enable_dhcp'],
+                'dnsServersList': subnet['dns_nameservers']}
         return self._post(self.ip_pool_path % subnet['id'],
                           body=body)
 

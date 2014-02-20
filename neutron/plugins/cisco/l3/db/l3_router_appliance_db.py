@@ -22,9 +22,9 @@ from oslo.config import cfg
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 
-from neutron import context as n_context
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
+from neutron import context as n_context
 from neutron.db import extraroute_db
 from neutron.db import l3_db
 from neutron.db import models_v2
@@ -33,11 +33,12 @@ from neutron import manager
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
-from neutron.plugins.cisco.l3.common import l3_rpc_joint_agent_api
 from neutron.plugins.cisco.l3.common import constants as cl3_const
+from neutron.plugins.cisco.l3.common import l3_rpc_joint_agent_api
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db
-from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
 from neutron.plugins.cisco.l3.db.l3_models import HostedHostingPortBinding
+from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
+
 
 LOG = logging.getLogger(__name__)
 
@@ -72,8 +73,9 @@ class RouterBindingInfoError(n_exc.NeutronException):
 
 
 class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
-    """ Mixin class to support router appliances to implement Neutron's
-        L3 routing functionality """
+    """Mixin class to support router appliances to implement Neutron's
+       L3 routing functionality
+    """
 
     hosting_scheduler = None
 
@@ -418,7 +420,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             raise RouterBindingInfoError(router_id=id)
 
     def _get_hosting_device_bindings(self, context, id, load_routers=False,
-                                    load_hosting_device=False):
+                                     load_hosting_device=False):
         query = context.session.query(RouterHostingDeviceBinding)
         if load_routers:
             query = query.options(joinedload('router'))

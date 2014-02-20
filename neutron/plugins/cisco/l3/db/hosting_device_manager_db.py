@@ -20,19 +20,20 @@ import eventlet
 import math
 import threading
 
+from keystoneclient import exceptions as k_exceptions
+from keystoneclient.v2_0 import client as k_client
 from oslo.config import cfg
 from sqlalchemy import and_
 from sqlalchemy import func
 from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
-from keystoneclient.v2_0 import client as k_client
-from keystoneclient import exceptions as k_exceptions
+
 
 from neutron.common import utils
 from neutron import context as neutron_context
 from neutron import manager
-from neutron.openstack.common import log as logging
 from neutron.openstack.common import importutils
+from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
 from neutron.plugins.cisco.l3.common import constants as cl3_const
 from neutron.plugins.cisco.l3.common import service_vm_lib
@@ -69,7 +70,7 @@ cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS)
 
 
 class HostingDeviceManager(object):
-    """ A class implementing a resource manager for hosting devices.
+    """A class implementing a resource manager for hosting devices.
 
     The caller should make sure that HostingDeviceManager is a singleton.
     """
@@ -140,10 +141,10 @@ class HostingDeviceManager(object):
                 cls._l3_tenant_uuid = tenant.id
             except k_exceptions.NotFound:
                 LOG.error(_('No tenant with a name or ID of %s exists.'),
-                            cfg.CONF.l3_admin_tenant)
+                          cfg.CONF.l3_admin_tenant)
             except k_exceptions.NoUniqueMatch:
                 LOG.error(_('Multiple tenants matches found for %s'),
-                            cfg.CONF.l3_admin_tenant)
+                          cfg.CONF.l3_admin_tenant)
         return cls._l3_tenant_uuid
 
     @classmethod
@@ -206,7 +207,8 @@ class HostingDeviceManager(object):
 
     def get_hosting_device_driver(self, context, host_type):
         """Returns the driver for hosting device with specified
-           hosting_device_id or hosting devices with specified host_type."""
+           hosting_device_id or hosting devices with specified host_type.
+        """
         try:
             return self._hosting_device_drivers[host_type]
         except KeyError:
@@ -218,14 +220,15 @@ class HostingDeviceManager(object):
             except ImportError:
                 LOG.exception(_("Error loading hosting device driver "
                                 "%(driver)s for host type %(host_type)s"),
-                          {'driver': template.get('device_driver'),
-                           'host_type': host_type})
+                              {'driver': template.get('device_driver'),
+                               'host_type': host_type})
                 raise
             return self._hosting_device_drivers[host_type]
 
     def get_hosting_device_plugging_driver(self, context, host_type):
         """Returns the plugging driver for hosting device with specified
-           hosting_device_id or hosting devices with specified host_type."""
+           hosting_device_id or hosting devices with specified host_type.
+        """
         try:
             return self._plugging_drivers[host_type]
         except KeyError:
@@ -244,7 +247,8 @@ class HostingDeviceManager(object):
 
     def get_hosting_device_capacity(self, context, host_type):
         """Returns how many logical resources a hosting device
-           of specified host_type can host."""
+           of specified host_type can host.
+        """
         try:
             return self._capacities[host_type]
         except KeyError:
@@ -392,12 +396,12 @@ class HostingDeviceManager(object):
         query = query.filter(HostingDevice.host_type == host_type)
         try:
             return query.one()
-        except exc.MultipleResultsFound as e:
+        except exc.MultipleResultsFound:
             LOG.debug(_('Multiple hosting device templates with same host '
                         'type %s. Please remove duplicates to ensure '
                         'uniqueness.'), host_type)
             return
-        except exc.NoResultFound as e:
+        except exc.NoResultFound:
             LOG.error(_('No hosting device templates with host type %s '
                         'found.'), host_type)
             return
@@ -425,7 +429,7 @@ class HostingDeviceManager(object):
 
     def process_non_responsive_hosting_device(
             self, context, hosting_device, logical_resource_ids):
-        """ Host type specific processing of non responsive hosting devices.
+        """Host type specific processing of non responsive hosting devices.
 
         :param hosting_device: db object for hosting device
         :param logical_resource_ids: dict{'routers': [id1, id2, ...]}
@@ -631,8 +635,9 @@ class HostingDeviceManager(object):
 
     def _delete_dead_service_vm_hosting_device(self, context, hosting_device,
                                                logical_resource_ids):
-        """ Deletes a presumably dead service VM. This will indirectly
-        make all of its hosted resources (i.e., routers) unscheduled."""
+        """Deletes a presumably dead service VM. This will indirectly
+           make all of its hosted resources (i.e., routers) unscheduled.
+        """
         if hosting_device is None:
             return
         host_type = hosting_device['host_type']

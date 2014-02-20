@@ -78,7 +78,8 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
 #TODO(bobmel): Need to store credentials somewhere/somehow.
 class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
     """Represents an appliance hosting Neutron router(s). When the
-       hosting device is a Nova VM 'id' is uuid of that VM."""
+       hosting device is a Nova VM 'id' is uuid of that VM.
+    """
     # id of hosting device template used to create the hosting device
     template_id = sa.Column(sa.String(36),
                             sa.ForeignKey('hostingdevicetemplates.id'))
@@ -110,7 +111,8 @@ class HostingDevice(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 
 class RouterTypeHostingDeviceTemplateBinding(model_base.BASEV2):
     """Represents binding between a Neutron router type and
-       hosting device template used to created them."""
+       hosting device template used to created them.
+    """
     router_type = sa.Column(sa.String(255), nullable=False)
     template_id = sa.Column(sa.String(36),
                             sa.ForeignKey('hostingdevicetemplates.id',
@@ -119,7 +121,7 @@ class RouterTypeHostingDeviceTemplateBinding(model_base.BASEV2):
 
 
 class RouterHostingDeviceBinding(model_base.BASEV2):
-    """Represents binding between Neutron routers and their hosting devices"""
+    """Represents binding between Neutron routers and their hosting devices."""
     router_id = sa.Column(sa.String(36),
                           sa.ForeignKey('routers.id', ondelete='CASCADE'),
                           primary_key=True)

@@ -17,14 +17,13 @@
 # @author: Hareesh Puthalath, Cisco Systems, Inc.
 # @author: Bob Melander, Cisco Systems, Inc.
 
-from oslo.config import cfg
-from novaclient.v1_1 import client
+
 from novaclient import exceptions as nova_exc
 from novaclient import utils as n_utils
+from novaclient.v1_1 import client
+from oslo.config import cfg
 
-from neutron.common import exceptions as n_exc
 from neutron import manager
-from neutron.openstack.common import uuidutils
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import constants
 

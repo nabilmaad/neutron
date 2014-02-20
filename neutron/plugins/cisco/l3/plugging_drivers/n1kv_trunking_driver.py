@@ -31,10 +31,11 @@ from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.extensions import n1kv_profile
 from neutron.plugins.cisco.l3.common import n1kv_constants as n1kv_const
+from neutron.plugins.cisco.l3.db import hosting_device_manager_db
 from neutron.plugins.cisco.l3.db.l3_router_appliance_db import (
     HostedHostingPortBinding)
 import neutron.plugins.cisco.l3.plugging_drivers as plug
-from neutron.plugins.cisco.l3.db import hosting_device_manager_db
+
 
 LOG = logging.getLogger(__name__)
 
@@ -206,7 +207,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                         {'name': n1kv_const.T1_SUBNET_NAME + indx,
                          'network_id': t1_n[i]['id']})
                     t1_sn.append(self._core_plugin.create_subnet(context,
-                                                                  sub_spec))
+                                                                 sub_spec))
                     # Create T1 port for this router
                     p_spec['port'].update(
                         {'name': n1kv_const.T1_PORT_NAME + indx,
@@ -328,7 +329,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             # whatsoever, so we select an unused port (that trunks networks
             # of correct type) on the hosting device.
             id_allocated_port = self._get_unused_service_vm_trunk_port(
-                 context, hosting_device_id, network_type)
+                context, hosting_device_id, network_type)
         else:
             # Router has at least one port with hosting port allocated to it.
             # If there is only one allocated hosting port then it may be for
@@ -367,7 +368,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             # For VLAN core plugin provides VLAN tag.
             trunk_mappings[port_db['network_id']] = None
             tags = self._core_plugin.get_networks(
-                context,  {'id': [port_db['network_id']]},
+                context, {'id': [port_db['network_id']]},
                 [pr_net.SEGMENTATION_ID])
             allocated_vlan = (None if tags == []
                               else tags[0].get(pr_net.SEGMENTATION_ID))

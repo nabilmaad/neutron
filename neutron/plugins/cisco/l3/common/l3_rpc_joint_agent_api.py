@@ -84,7 +84,8 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
 
     def _notification(self, context, method, routers, operation, data):
         """Notify all the l3 agents and Cisco cfg agents that are
-        hosting or configuring the routers, respectively."""
+        hosting or configuring the routers, respectively.
+        """
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
         if utils.is_extension_supported(
