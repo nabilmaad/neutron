@@ -34,10 +34,10 @@ LOG = logging.getLogger(__name__)
 SERVICE_VM_LIB_OPTS = [
     cfg.StrOpt('templates_path',
                default='/opt/stack/data/neutron/cisco/templates',
-               help=_("Path to default templates")),
+               help=_("Path to templates for hosting devices")),
     cfg.StrOpt('service_vm_config_path',
                default='/opt/stack/data/neutron/cisco/config_drive',
-               help=_("Path to config drive files for service VMs")),
+               help=_("Path to config drive files for service VM instances")),
 ]
 
 cfg.CONF.register_opts(SERVICE_VM_LIB_OPTS)

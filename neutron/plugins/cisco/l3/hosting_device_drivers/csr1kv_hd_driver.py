@@ -33,8 +33,8 @@ CFG_DRIVE_UUID_START = 24
 CFG_DRIVE_UUID_LEN = 12
 
 CSR1KV_HD_DRIVER_OPTS = [
-    cfg.StrOpt('csr_config_template', default='csr_cfg_template',
-               help=_("CSR default template file name")),
+    cfg.StrOpt('csr1kv_configdrive_template', default='csr1kv_cfg_template',
+               help=_("CSR1kv configdrive template file")),
 ]
 
 cfg.CONF.register_opts(CSR1KV_HD_DRIVER_OPTS)
@@ -57,7 +57,7 @@ class CSR1kvHostingDeviceDriver(HostingDeviceDriver):
                   '<name_server>': '8.8.8.8'}
         try:
             cfg_template_filename = (cfg.CONF.templates_path + "/" +
-                                     cfg.CONF.csr_config_template)
+                                     cfg.CONF.csr1kv_configdrive_template)
             vm_cfg_filename = self._unique_cfgdrive_filename(mgmtport['id'])
             cfg_template_file = open(cfg_template_filename, 'r')
             vm_cfg_file = open(vm_cfg_filename, "w")

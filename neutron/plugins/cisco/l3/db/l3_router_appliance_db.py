@@ -50,7 +50,7 @@ ROUTER_APPLIANCE_OPTS = [
                default='neutron.plugins.cisco.l3.scheduler.'
                        'l3_hosting_device_scheduler.L3HostingDeviceScheduler',
                help=_('Driver to use for scheduling router to a hosting '
-                      'entity')),
+                      'device')),
     cfg.StrOpt('backlog_processing_interval',
                default=10,
                help=_('Time in seconds between renewed scheduling attempts of '
