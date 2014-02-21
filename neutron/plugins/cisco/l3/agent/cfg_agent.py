@@ -108,22 +108,9 @@ class CiscoCfgAgent(manager.Manager):
         cfg.StrOpt('external_network_bridge', default='',
                    help=_("Name of bridge used for external network "
                           "traffic.")),
-        cfg.IntOpt('send_arp_for_ha',
-                   default=0,
-                   help=_("Send this many gratuitous ARPs for HA setup, if "
-                          "less than or equal to 0, the feature is disabled")),
-        cfg.StrOpt('router_id', default='',
-                   help=_("If namespaces is disabled, the l3 agent can only"
-                          " confgure a router that has the matching router "
-                          "ID.")),
-        cfg.BoolOpt('handle_internal_only_routers',
-                    default=True,
-                    help=_("Agent should implement routers with no gateway")),
         cfg.StrOpt('gateway_external_network_id', default='',
                    help=_("UUID of external network for routers implemented "
                           "by the agents.")),
-        cfg.BoolOpt('use_hosting_devices', default=True,
-                    help=_("Allow hosting devices for routing service.")),
         cfg.IntOpt('hosting_device_dead_timeout', default=300,
                    help=_("The time in seconds until a backlogged "
                           "hosting device is presumed dead ")),
@@ -377,8 +364,6 @@ class CiscoCfgAgent(manager.Manager):
             # device is decided and enforced by the plugin.
             # So no checks are done here.
             ex_net_id = (r['external_gateway_info'] or {}).get('network_id')
-            if not ex_net_id and not self.conf.handle_internal_only_routers:
-                continue
             if (target_ex_net_id and ex_net_id and
                     ex_net_id != target_ex_net_id):
                 continue
@@ -397,7 +382,7 @@ class CiscoCfgAgent(manager.Manager):
             pool.spawn_n(self._router_removed, router_id)
             pool.waitall()
 
-    @lockutils.synchronized('l3-agent', 'neutron-')
+    @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def _rpc_loop(self):
         # _rpc_loop and _sync_routers_task will not be
         # executed in the same time because of lock.
@@ -424,19 +409,15 @@ class CiscoCfgAgent(manager.Manager):
             self._router_removed(router_id)
             self.removed_routers.remove(router_id)
 
-    def _router_ids(self):
-        if not self.conf.use_namespaces:
-            return [self.conf.router_id]
-
     @periodic_task.periodic_task
-    @lockutils.synchronized('l3-agent', 'neutron-')
+    @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def _sync_routers_task(self, context):
         LOG.debug(_("Starting _sync_routers_task - fullsync:%s"),
                   self.fullsync)
         if not self.fullsync:
             return
         try:
-            router_ids = self._router_ids()
+            router_ids = None
             self.updated_routers.clear()
             self.removed_routers.clear()
             routers = self.plugin_rpc.get_routers(
@@ -467,7 +448,7 @@ class CiscoCfgAgent(manager.Manager):
                     context, he_ids=res['dead'])
 
     def after_start(self):
-        LOG.info(_("L3 Cfg Agent started"))
+        LOG.info(_("Cisco cfg agent started"))
 
     def routes_updated(self, ri):
         new_routes = ri.router['routes']
@@ -502,13 +483,8 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             'host': host,
             'topic': cl3_constants.CFG_AGENT,
             'configurations': {
-                # 'use_namespaces': self.conf.use_namespaces,
-                # 'router_id': self.conf.router_id,
-                # 'handle_internal_only_routers':
-                # self.conf.handle_internal_only_routers,
                 # 'gateway_external_network_id':
                 # self.conf.gateway_external_network_id,
-                # 'interface_driver': self.conf.interface_driver,
                 'hosting_device_drivers': {
                     cl3_constants.CSR1KV_HOST:
                     'neutron.plugins.cisco.l3.agent.csr1000v.'
