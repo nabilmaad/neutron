@@ -512,7 +512,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
                 'hosting_device_drivers': {
                     cl3_constants.CSR1KV_HOST:
                     'neutron.plugins.cisco.l3.agent.csr1000v.'
-                    'cisco_csr_network_driver.CSR1000vRoutingDriver'}},
+                    'cisco_csr_network_driver.CSR1kvRoutingDriver'}},
             'start_flag': True,
             'agent_type': cl3_constants.AGENT_TYPE_CFG}
         report_interval = cfg.CONF.AGENT.report_interval

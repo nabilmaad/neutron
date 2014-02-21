@@ -25,11 +25,11 @@ from neutron.common import constants as l3_constants
 from neutron.openstack.common import uuidutils
 from neutron.tests import base
 
-import neutron.plugins.cisco.l3.agent.csr1000v.cisco_csr_snippets as snippets
+import neutron.plugins.cisco.l3.agent.csr1kv.cisco_csr_snippets as snippets
 sys.modules['ncclient'] = mock.MagicMock()
 sys.modules['ciscoconfparse'] = mock.MagicMock()
-from neutron.plugins.cisco.l3.agent.csr1000v.csr1000v_routing_driver import (
-    CSR1000vRoutingDriver)
+from neutron.plugins.cisco.l3.agent.csr1kv.csr1kv_routing_driver import (
+    CSR1kvRoutingDriver)
 from neutron.plugins.cisco.l3.agent.router_info import RouterInfo
 
 _uuid = uuidutils.generate_uuid
@@ -42,12 +42,12 @@ class TestCSR1000vRouting(base.BaseTestCase):
     def setUp(self):
         super(TestCSR1000vRouting, self).setUp()
 
-        self.driver = CSR1000vRoutingDriver(None, None, None, None)
+        self.driver = CSR1kvRoutingDriver(None, None, None, None)
         self.mock_conn = mock.MagicMock()
         self.driver._csr_conn = self.mock_conn
         self.driver._check_response = mock.MagicMock(return_value=True)
 
-        self.vrf = ('nrouter-' + FAKE_ID)[:CSR1000vRoutingDriver.DEV_NAME_LEN]
+        self.vrf = ('nrouter-' + FAKE_ID)[:CSR1kvRoutingDriver.DEV_NAME_LEN]
         self.driver._get_vrfs = mock.Mock(return_value=[self.vrf])
         self.ex_gw_ip = '20.0.0.30'
         self.ex_gw_cidr = '20.0.0.30/24'
