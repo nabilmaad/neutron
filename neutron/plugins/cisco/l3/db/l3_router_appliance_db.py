@@ -51,7 +51,7 @@ ROUTER_APPLIANCE_OPTS = [
                        'l3_hosting_device_scheduler.L3HostingDeviceScheduler',
                help=_('Driver to use for scheduling router to a hosting '
                       'device')),
-    cfg.StrOpt('backlog_processing_interval',
+    cfg.IntOpt('backlog_processing_interval',
                default=10,
                help=_('Time in seconds between renewed scheduling attempts of '
                       'non-scheduled routers')),
