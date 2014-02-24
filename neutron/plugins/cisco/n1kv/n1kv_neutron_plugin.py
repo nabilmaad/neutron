@@ -168,8 +168,8 @@ class N1kvNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
 
     def _setup_rpc(self):
         # RPC support
-        self.service_topics = {svc_constants.CORE: topics.PLUGIN,
-                               svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
+        self.service_topics = {svc_constants.CORE: topics.PLUGIN}#,
+#                               svc_constants.L3_ROUTER_NAT: topics.L3PLUGIN}
         self.conn = rpc.create_connection(new=True)
         self.notifier = AgentNotifierApi(topics.AGENT)
         self.callbacks = N1kvRpcCallbacks(self.notifier)
