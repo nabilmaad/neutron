@@ -111,12 +111,6 @@ class CiscoCfgAgent(manager.Manager):
         cfg.StrOpt('gateway_external_network_id', default='',
                    help=_("UUID of external network for routers configured "
                           "by agents.")),
-        cfg.IntOpt('hosting_device_dead_timeout', default=300,
-                   help=_("The time in seconds until a backlogged "
-                          "hosting device is presumed dead. This value should "
-                          "be set up high enough to recover from a period of "
-                          "loss of connectivity or high load in which the "
-                          "device is not responding.")),
     ]
 
     def __init__(self, host, conf=None):
@@ -320,17 +314,17 @@ class CiscoCfgAgent(manager.Manager):
         """RPC Notification that a hosting device was removed.
         Expected Payload format:
         {
-             'hosting_data': {'he_id1': {'routers': [id1, id2, ...]},
-                              'he_id2': {'routers': [id3, id4, ...]}, ... },
+             'hosting_data': {'hd_id1': {'routers': [id1, id2, ...]},
+                              'hd_id2': {'routers': [id3, id4, ...]}, ... },
              'deconfigure': True/False
         }
         """
-        for he_id, resource_data in payload['hosting_data'].items():
+        for hd_id, resource_data in payload['hosting_data'].items():
             LOG.debug(_("Hosting device removal data: %s "),
                       payload['hosting_data'])
             for router_id in resource_data.get('routers', []):
                 self._router_removed(router_id, payload['deconfigure'])
-            self._hdm.pop(he_id)
+            self._hdm.pop(hd_id)
 
     def router_removed_from_agent(self, context, payload):
         LOG.debug(_('Got router removed from agent :%r'), payload)
@@ -441,14 +435,14 @@ class CiscoCfgAgent(manager.Manager):
                 LOG.debug(_("Requesting routers for hosting devices: %s "
                             "that are now responding."), res['reachable'])
                 routers = self.plugin_rpc.get_routers(
-                    context, router_ids=None, he_ids=res['reachable'])
+                    context, router_ids=None, hd_ids=res['reachable'])
                 self._process_routers(routers, all_routers=True)
             if res['dead']:
                 LOG.debug(_("Reporting dead hosting devices: %s"),
                           res['dead'])
                 # Process dead Hosting Device
                 self.plugin_rpc.report_dead_hosting_devices(
-                    context, he_ids=res['dead'])
+                    context, hd_ids=res['dead'])
 
     def after_start(self):
         LOG.info(_("Cisco cfg agent started"))
@@ -506,8 +500,8 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
         num_floating_ips = 0
         router_infos = self.router_info.values()
         num_routers = len(router_infos)
-        num_he_routers = {}
-        routers_per_he = {}
+        num_hd_routers = {}
+        routers_per_hd = {}
         for ri in router_infos:
             ex_gw_port = self._get_ex_gw_port(ri)
             if ex_gw_port:
@@ -516,18 +510,18 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
                                                 []))
             num_floating_ips += len(ri.router.get(l3_constants.FLOATINGIP_KEY,
                                                   []))
-            he = ri.router['hosting_device']
-            if he:
-                num_he_routers[he['id']] = num_he_routers.get(he['id'], 0) + 1
-        for (he_id, num) in num_he_routers.items():
-            routers_per_he[he_id] = {'routers': num}
+            hd = ri.router['hosting_device']
+            if hd:
+                num_hd_routers[hd['id']] = num_hd_routers.get(hd['id'], 0) + 1
+        for (hd_id, num) in num_hd_routers.items():
+            routers_per_hd[hd_id] = {'routers': num}
         non_responding = self._hdm.get_backlogged_hosting_devices()
         configurations = self.agent_state['configurations']
         configurations['total routers'] = num_routers
         configurations['total ex_gw_ports'] = num_ex_gw_ports
         configurations['total interfaces'] = num_interfaces
         configurations['total floating_ips'] = num_floating_ips
-        configurations['hosting_devices'] = routers_per_he
+        configurations['hosting_devices'] = routers_per_hd
         configurations['non_responding_hosting_devices'] = non_responding
         try:
             self.state_rpc.report_state(self.context, self.agent_state,
