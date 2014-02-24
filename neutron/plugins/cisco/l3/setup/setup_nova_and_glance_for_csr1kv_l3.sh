@@ -6,6 +6,12 @@
 # i.e., it should be either 'neutron' or 'quantum', for
 # release >=Havana and release <=Grizzly, respectively.
 adminUser=${1:-neutron}
+localrc=$2
+
+if [[ ! -z $localrc && -f $localrc ]]; then
+    source $localrc
+fi
+
 l3AdminTenant="L3AdminTenant"
 csr1kvFlavorName="csr1kv_router"
 csr1kvFlavorId=621
@@ -14,11 +20,12 @@ aggregateMetadataKey="aggregate_instance_extra_specs:network_host"
 aggregateMetadataValue="True"
 aggregateMetadata="$aggregateMetadataKey=$aggregateMetadataValue"
 computeNetworkNodes=($(hostname) ComputeNode)
-csr1kvImageSrc="/home/stack/csr1000v-XE310_Throttle_20130506.qcow2"
+csr1kvImageSrc=$Q_CISCO_CSR1KV_QCOW2_IMAGE
 csr1kvImageName="csr1kv_openstack_img"
 csr1kvDiskFormat="qcow2"
 csr1kvContainerFormat="bare"
 csr1kvGlanceExtraParams="--property hw_vif_model=e1000 --property hw_disk_bus=ide --property hw_cdrom_bus=ide"
+
 
 tenantId=`keystone tenant-get $l3AdminTenant 2>&1 | awk '/No tenant|id/ { if ($1 == "No") print "No"; else print $4; }'`
 if [ "$tenantId" == "No" ]; then

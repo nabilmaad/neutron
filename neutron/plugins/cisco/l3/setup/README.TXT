@@ -1,5 +1,5 @@
 The easy way to do everything in one go:
-./install <neutron/quantum> <n1kv/ovs>
+./csr1kv_install_all.sh <neutron/quantum> <n1kv/ovs> <full_devstack_dir_path/localrc>
 
 # The first parameter is the name of Openstack network service,
 # i.e., it should be either 'neutron' or 'quantum', for
@@ -19,8 +19,8 @@ the other scripts can be used.
 $ source [path to devstack directory]/openrc admin demo
 $ ./setup_keystone_for_csr1kv_l3.sh <neutron/quantum>
 $ source [path to devstack directory]/openrc quantum L3AdminTenant
-$ ./setup_nova_and_glance_for_csrk1v.sh <neutron/quantum>
-$ ./setup_neutron_for_csr1kv.sh <neutron/quantum> <n1kv/ovs>
+$ ./setup_nova_and_glance_for_csrk1v.sh <neutron/quantum> <full_devstack_dir_path/localrc>
+$ ./setup_neutron_for_csr1kv.sh <neutron/quantum> <n1kv/ovs> <full_devstack_dir_path/localrc>
 $ sudo -E ./setup_l3cfgagent_networking.sh <neutron/quantum> <n1kv/ovs>
 $ source [path to devstack directory]/openrc admin demo
 $ ./setup_test_networks.sh <neutron/quantum> <n1kv/ovs>

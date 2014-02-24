@@ -8,13 +8,18 @@
 osn=${1:-neutron}
 plugin=${2:-n1kv}
 #plugin=ovs
+localrc=$3
+
+if [[ ! -z $localrc && -f $localrc ]]; then
+    source $localrc
+fi
 
 adminUser=$osn
 l3AdminTenant=L3AdminTenant
 
-vsmIP=192.168.168.2
-vsmUsername=admin
-vsmPassword=Sfish123
+vsmIP=${Q_CISCO_PLUGIN_VSM_IP:-192.168.168.2}
+vsmUsername=${Q_CISCO_PLUGIN_VSM_USERNAME:-admin}
+vsmPassword=${Q_CISCO_PLUGIN_VSM_PASSWORD:-Sfish123}
 
 base_dir=/opt/stack/data/$osn/cisco
 config_drive_dir=$base_dir/config_drive
