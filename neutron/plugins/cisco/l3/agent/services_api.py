@@ -18,12 +18,17 @@
 
 from abc import ABCMeta, abstractmethod
 
+import six
 
-class RoutingDriver():
-    """This class defines the API for the Routing and NAT related operations
-       to be implemented by supported hosting devices
+
+@six.add_metaclass(ABCMeta)
+class RoutingDriver(object):
+    """Base class that defines an abstract interface for the Routing Driver.
+
+    This class defines the abstract interface/API for the Routing and
+    NAT related operations. Driver class corresponding to a hosting device
+    should inherit this base driver and implement its methods.
     """
-    __metaclass__ = ABCMeta
 
     @abstractmethod
     def router_added(self, router_info):

@@ -18,6 +18,7 @@
 
 import copy
 import mock
+from oslo.config import cfg
 
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
@@ -26,7 +27,6 @@ from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.l3.agent.cfg_agent import CiscoCfgAgent
 from neutron.plugins.cisco.l3.agent.router_info import RouterInfo
 from neutron.tests import base
-from oslo.config import cfg
 
 _uuid = uuidutils.generate_uuid
 HOSTNAME = 'myhost'
@@ -119,13 +119,16 @@ class TestBasicRouterOperations(base.BaseTestCase):
         self.assertEqual(ri.snat_enabled, False)
 
     def test_agent_create(self):
-        CiscoCfgAgent(HOSTNAME, self.conf)
+        agent = CiscoCfgAgent(HOSTNAME, self.conf)
+        self.assertTrue(isinstance(agent, CiscoCfgAgent))
 
     def test_process_router(self):
         agent = CiscoCfgAgent(HOSTNAME, self.conf)
         agent.process_router_floating_ips = mock.Mock()
         agent.internal_network_added = mock.Mock()
         agent.external_gateway_added = mock.Mock()
+        agent.internal_network_removed = mock.Mock()
+        agent.external_gateway_removed = mock.Mock()
         self._mock_driver_and_hosting_device(agent)
         router, ports = self._prepare_router_data()
         fake_floatingips1 = {'floatingips': [
@@ -134,44 +137,63 @@ class TestBasicRouterOperations(base.BaseTestCase):
              'fixed_ip_address': '7.7.7.7',
              'port_id': _uuid()}]}
         ri = RouterInfo(router['id'], router=router)
+        # Process with initial values
         agent.process_router(ri)
         ex_gw_port = agent._get_ex_gw_port(ri)
+        # Assert that process_floating_ips, internal_network & external network
+        # added were all called with the right params
         agent.process_router_floating_ips.assert_called_with(
             ri, ex_gw_port)
         agent.process_router_floating_ips.reset_mock()
         agent.internal_network_added.assert_called_with(ri, ports[0],
                                                         ex_gw_port)
         agent.external_gateway_added.assert_called_with(ri, ex_gw_port)
-
+        agent.internal_network_added.reset_mock()
+        agent.external_gateway_added.reset_mock()
         # remap floating IP to a new fixed ip
         fake_floatingips2 = copy.deepcopy(fake_floatingips1)
         fake_floatingips2['floatingips'][0]['fixed_ip_address'] = '7.7.7.8'
-
         router[l3_constants.FLOATINGIP_KEY] = fake_floatingips2['floatingips']
+
+        # Process again and check that this time only the process_floating_ips
+        # was only called.
         agent.process_router(ri)
         ex_gw_port = agent._get_ex_gw_port(ri)
         agent.process_router_floating_ips.assert_called_with(
             ri, ex_gw_port)
+        self.assertFalse(agent.internal_network_added.called)
+        self.assertFalse(agent.external_gateway_added.called)
         agent.process_router_floating_ips.reset_mock()
-        # agent.process_router_floating_ip_nat_rules.assert_called_with(ri)
-        # agent.process_router_floating_ip_nat_rules.reset_mock()
 
         # remove just the floating ips
         del router[l3_constants.FLOATINGIP_KEY]
+        # Process again and check that this time also only the
+        # process_floating_ips and external_network remove was called
         agent.process_router(ri)
         ex_gw_port = agent._get_ex_gw_port(ri)
         agent.process_router_floating_ips.assert_called_with(
             ri, ex_gw_port)
+        self.assertFalse(agent.internal_network_added.called)
+        self.assertFalse(agent.external_gateway_added.called)
         agent.process_router_floating_ips.reset_mock()
-        # agent.process_router_floating_ip_nat_rules.assert_called_with(ri)
-        # agent.process_router_floating_ip_nat_rules.reset_mock()
 
         # now no ports so state is torn down
         del router[l3_constants.INTERFACE_KEY]
         del router['gw_port']
+        # Update router_info object
+        ri.router = router
+        # Keep a copy of the ex_gw_port before its gone after processing.
+        ex_gw_port = ri.ex_gw_port
+        # Process router and verify that internal and external network removed
+        # were called and floating_ips_process was called
         agent.process_router(ri)
         self.assertFalse(agent.process_router_floating_ips.called)
-        # self.assertFalse(agent.process_router_floating_ip_nat_rules.called)
+        self.assertFalse(agent.external_gateway_added.called)
+        self.assertTrue(agent.internal_network_removed.called)
+        self.assertTrue(agent.external_gateway_removed.called)
+        agent.internal_network_removed.assert_called_with(ri, ports[0],
+                                                          ex_gw_port)
+        agent.external_gateway_removed.assert_called_with(ri, ex_gw_port)
 
     def test_routing_table_update(self):
         router_id = _uuid()
@@ -184,12 +206,18 @@ class TestBasicRouterOperations(base.BaseTestCase):
                        'nexthop': '1.2.3.4'}
         fake_route2 = {'destination': '135.207.111.111/32',
                        'nexthop': '1.2.3.4'}
+
+        # First we set the routes to fake_route1 and see if the
+        # driver.routes_updated was called with 'replace'(==add or replace)
+        # and fake_route1
         router['routes'] = [fake_route1]
         ri = RouterInfo(router_id, router)
         agent.process_router(ri)
 
         driver.routes_updated.assert_called_with(ri, 'replace', fake_route1)
 
+        # Now we replace fake_route1 with fake_route2. This should cause driver
+        # to be invoked to delete fake_route1 and 'replace'(==add or replace)
         driver.reset_mock()
         router['routes'] = [fake_route2]
         ri.router = router
@@ -198,6 +226,8 @@ class TestBasicRouterOperations(base.BaseTestCase):
         driver.routes_updated.assert_called_with(ri, 'delete', fake_route1)
         driver.routes_updated.assert_any_call(ri, 'replace', fake_route2)
 
+        # Now we add back fake_route1 as a new route, this should cause driver
+        # to be invoked to 'replace'(==add or replace) fake_route1
         driver.reset_mock()
         router['routes'] = [fake_route2, fake_route1]
         ri.router = router
@@ -205,6 +235,8 @@ class TestBasicRouterOperations(base.BaseTestCase):
 
         driver.routes_updated.assert_any_call(ri, 'replace', fake_route1)
 
+        # Now we delete all routes. This should cause driver
+        # to be invoked to delete fake_route1 and fake-route2
         driver.reset_mock()
         router['routes'] = []
         ri.router = router

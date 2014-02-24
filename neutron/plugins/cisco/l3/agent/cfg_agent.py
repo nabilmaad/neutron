@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -96,11 +94,13 @@ class CiscoL3PluginApi(proxy.RpcProxy):
 
 
 class CiscoCfgAgent(manager.Manager):
-
     """Cisco Cfg Agent.
-    This class is based on the reference l3 agent implementation and modified
-    for working with configuring hosting devices
 
+    This class defines a generic configuration agent for cisco devices which
+    implement network services in the cloud backend. It is based on the
+    reference l3 agent . The agent does not do any configuration. All device
+    specific configuration are done by hosting device drivers which
+    implement the service api for corresponding services (eg: Routing)
     """
     RPC_API_VERSION = '1.1'
 
@@ -109,11 +109,14 @@ class CiscoCfgAgent(manager.Manager):
                    help=_("Name of bridge used for external network "
                           "traffic.")),
         cfg.StrOpt('gateway_external_network_id', default='',
-                   help=_("UUID of external network for routers implemented "
-                          "by the agents.")),
+                   help=_("UUID of external network for routers configured "
+                          "by agents.")),
         cfg.IntOpt('hosting_device_dead_timeout', default=300,
                    help=_("The time in seconds until a backlogged "
-                          "hosting device is presumed dead ")),
+                          "hosting device is presumed dead. This value should "
+                          "be set up high enough to recover from a period of "
+                          "loss of connectivity or high load in which the "
+                          "device is not responding.")),
     ]
 
     def __init__(self, host, conf=None):
@@ -123,7 +126,7 @@ class CiscoCfgAgent(manager.Manager):
             self.conf = cfg.CONF
         self.router_info = {}
         self.context = context.get_admin_context_without_session()
-        self.plugin_rpc = CiscoL3PluginApi(topics.PLUGIN, host)
+        self.plugin_rpc = CiscoL3PluginApi(topics.L3PLUGIN, host)
         self.fullsync = True
         self.updated_routers = set()
         self.removed_routers = set()
@@ -209,7 +212,7 @@ class CiscoCfgAgent(manager.Manager):
             ri.internal_ports.append(p)
 
         for p in old_ports:
-            self.internal_network_removed(ri, p, ex_gw_port)
+            self.internal_network_removed(ri, p, ri.ex_gw_port)
             ri.internal_ports.remove(p)
 
         if ex_gw_port and not ri.ex_gw_port:
@@ -417,7 +420,7 @@ class CiscoCfgAgent(manager.Manager):
         if not self.fullsync:
             return
         try:
-            router_ids = None
+            router_ids = self._router_ids()
             self.updated_routers.clear()
             self.removed_routers.clear()
             routers = self.plugin_rpc.get_routers(
@@ -483,8 +486,6 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             'host': host,
             'topic': cl3_constants.CFG_AGENT,
             'configurations': {
-                # 'gateway_external_network_id':
-                # self.conf.gateway_external_network_id,
                 'hosting_device_drivers': {
                     cl3_constants.CSR1KV_HOST:
                     'neutron.plugins.cisco.l3.agent.csr1000v.'

@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -21,7 +19,7 @@
 
 # These prefix defines will go away when Nova allows spinning up
 # VMs with vifs on networks without subnet(s).
-SUB_PREFX = '172.16.1.0/24'
+SUBNET_PREFIX = '172.16.1.0/24'
 
 # T1 port/network is for VXLAN
 T1_PORT_NAME = 't1_p:'
@@ -32,5 +30,5 @@ T2_NETWORK_NAME = 't2_n:'
 T1_SUBNET_NAME = 't1_sn:'
 T2_SUBNET_NAME = 't2_sn:'
 
-T1_SUBNET_START_PREFX = '172.16.'
-T2_SUBNET_START_PREFX = '172.32.'
+T1_SUBNET_START_PREFIX = '172.16.'
+T2_SUBNET_START_PREFIX = '172.32.'
