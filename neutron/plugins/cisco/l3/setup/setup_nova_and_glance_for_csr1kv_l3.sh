@@ -10,9 +10,9 @@ l3AdminTenant="L3AdminTenant"
 csr1kvFlavorName="csr1kv_router"
 csr1kvFlavorId=621
 networkHostsAggregateName="compute_network_hosts"
-aggregateMetadataKey="network_host"
+aggregateMetadataKey="aggregate_instance_extra_specs:network_host"
 aggregateMetadataValue="True"
-aggregateMetadata=$aggregateMetadataKey"="$aggregateMetadataValue
+aggregateMetadata="$aggregateMetadataKey=$aggregateMetadataValue"
 computeNetworkNodes=($(hostname) ComputeNode)
 csr1kvImageSrc="/home/stack/csr1000v-XE310_Throttle_20130506.qcow2"
 csr1kvImageName="csr1kv_openstack_img"
