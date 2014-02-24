@@ -50,7 +50,9 @@ delete_service_resources_by_name $osn net t1_n:
 delete_service_resources_by_name $osn net t2_n:
 
 source ~/devstack/localrc
+MYSQL_USER=${MYSQL_USER:-root}
 table="cisco_$osn"
+
 mysql -u$MYSQL_USER -p$MYSQL_PASSWORD -e "use $table; delete from hostingdevices;"
 
 echo
