@@ -37,7 +37,7 @@ function delete_service_resources_by_name() {
 
 source ~/devstack/openrc $osn L3AdminTenant
 
-delete_service_resources_by_name nova server csr1kv_nrouter
+delete_service_resources_by_name nova server CSR1kv_nrouter
 
 delete_service_resources_by_name $osn port mgmt
 delete_service_resources_by_name $osn port t1_p:
