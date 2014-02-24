@@ -34,9 +34,9 @@ OPTS = [
                help=_("The time in seconds until a backlogged "
                       "hosting device is presumed dead ")),
     cfg.StrOpt('CSR1kv_Routing_Driver', default='neutron.plugins.cisco.'
-                                                'l3.agent.csr1kv.'
-                                                'csr1kv_routing_driver.'
-                                                'CSR1kvRoutingDriver',
+                                                'l3.agent.csr1000v.'
+                                                'csr1000v_routing_driver.'
+                                                'CSR1000vRoutingDriver',
                help=_("CSR1000v Routing Driver class")),
 ]
 cfg.CONF.register_opts(OPTS)

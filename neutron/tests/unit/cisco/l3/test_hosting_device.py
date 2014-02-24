@@ -69,7 +69,7 @@ class TestHostingDevice(base.BaseTestCase):
         klass = importutils.import_class('neutron.plugins.cisco.l3.'
                                          'agent.csr1000v.'
                                          'csr1000v_routing_driver.'
-                                         'CSR1kvRoutingDriver')
+                                         'CSR1000vRoutingDriver')
         self.assertTrue(isinstance(_driver, klass))
 
     def test_is_hosting_device_reachable_positive(self):

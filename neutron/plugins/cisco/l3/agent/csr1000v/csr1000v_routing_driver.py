@@ -32,7 +32,7 @@ from neutron.plugins.cisco.l3.common import n1kv_constants as n1kv_constants
 LOG = logging.getLogger(__name__)
 
 
-class CSR1kvRoutingDriver(RoutingDriver):
+class CSR1000vRoutingDriver(RoutingDriver):
     """CSR1000v Routing Driver"""
 
     DEV_NAME_LEN = 14
@@ -130,9 +130,9 @@ class CSR1kvRoutingDriver(RoutingDriver):
 
     def _csr_add_ha(self, ri, port):
         func_dict = {
-            'HSRP': CSR1kvRoutingDriver._csr_add_ha_HSRP,
-            'VRRP': CSR1kvRoutingDriver._csr_add_ha_VRRP,
-            'GBLP': CSR1kvRoutingDriver._csr_add_ha_GBLP
+            'HSRP': CSR1000vRoutingDriver._csr_add_ha_HSRP,
+            'VRRP': CSR1000vRoutingDriver._csr_add_ha_VRRP,
+            'GBLP': CSR1000vRoutingDriver._csr_add_ha_GBLP
         }
         #Invoke the right function for the ha type
         func_dict[ri.ha_info['ha:type']](self, ri, port)
