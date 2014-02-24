@@ -420,7 +420,7 @@ class CiscoCfgAgent(manager.Manager):
         if not self.fullsync:
             return
         try:
-            router_ids = self._router_ids()
+            router_ids = None
             self.updated_routers.clear()
             self.removed_routers.clear()
             routers = self.plugin_rpc.get_routers(
