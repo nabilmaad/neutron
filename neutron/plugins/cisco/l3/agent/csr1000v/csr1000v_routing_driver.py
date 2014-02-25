@@ -26,13 +26,20 @@ from ciscoconfparse import CiscoConfParse
 from ncclient import manager
 import xml.etree.ElementTree as ET
 
-from neutron.plugins.cisco.l3.agent.services_api import RoutingDriver
+from oslo.config import cfg
+
+from neutron.plugins.cisco.l3.agent.services_api import RoutingDriverBase
+from neutron.plugins.cisco.l3.common.exceptions import (
+    CSR1000vConfigException)
+from neutron.plugins.cisco.l3.common.exceptions import (
+    CSR1000vConnectionException)
 from neutron.plugins.cisco.l3.common import n1kv_constants as n1kv_constants
+
 
 LOG = logging.getLogger(__name__)
 
 
-class CSR1000vRoutingDriver(RoutingDriver):
+class CSR1000vRoutingDriver(RoutingDriverBase):
     """CSR1000v Routing Driver"""
 
     DEV_NAME_LEN = 14
@@ -42,6 +49,7 @@ class CSR1000vRoutingDriver(RoutingDriver):
         self._csr_ssh_port = csr_ssh_port
         self._csr_user = csr_user
         self._csr_password = csr_password
+        self._timeout = cfg.CONF.device_connection_timeout
         self._csr_conn = None
         self._intfs_enabled = False
 
@@ -57,12 +65,8 @@ class CSR1000vRoutingDriver(RoutingDriver):
         self._csr_create_subinterface(ri, port)
         if port.get('ha_info') is not None and ri.ha_info['ha:enabled']:
             self._csr_add_ha(ri, port)
-        # if ex_gw_port:
-        #     self._csr_add_internalnw_nat_rules(ri, port, ex_gw_port)
 
     def internal_network_removed(self, ri, port):
-        # if ex_gw_port:
-        #     self._csr_remove_internalnw_nat_rules(ri, [port], ex_gw_port)
         self._csr_remove_subinterface(ri, port)
 
     def external_gateway_added(self, ri, ex_gw_port):
@@ -72,30 +76,19 @@ class CSR1000vRoutingDriver(RoutingDriver):
             #Set default route via this network's gateway ip
             self._csr_add_default_route(ri, ex_gw_ip)
 
-        #Apply NAT rules for internal networks
-        # if len(ri.internal_ports) > 0:
-        #     for port in ri.internal_ports:
-        #         self._csr_add_internalnw_nat_rules(ri, port, ex_gw_port)
-
     def external_gateway_removed(self, ri, ex_gw_port):
-        #Remove internal network NAT rules
-        # if len(ri.internal_ports) > 0:
-        #     self._csr_remove_internalnw_nat_rules(ri, ri.internal_ports,
-        #                                           ex_gw_port)
-
         ex_gw_ip = ex_gw_port['subnet']['gateway_ip']
         if ex_gw_ip:
             #Remove default route via this network's gateway ip
             self._csr_remove_default_route(ri, ex_gw_ip)
-
         #Finally, remove external network subinterface
         self._csr_remove_subinterface(ri, ex_gw_port)
 
     def enable_internal_network_NAT(self, ri, port, ex_gw_port):
-            self._csr_add_internalnw_nat_rules(ri, port, ex_gw_port)
+        self._csr_add_internalnw_nat_rules(ri, port, ex_gw_port)
 
     def disable_internal_network_NAT(self, ri, port, ex_gw_port):
-            self._csr_remove_internalnw_nat_rules(ri, [port], ex_gw_port)
+        self._csr_remove_internalnw_nat_rules(ri, [port], ex_gw_port)
 
     def floating_ip_added(self, ri, ex_gw_port, floating_ip, fixed_ip):
         self._csr_add_floating_ip(ri, ex_gw_port, floating_ip, fixed_ip)
@@ -254,17 +247,16 @@ class CSR1000vRoutingDriver(RoutingDriver):
                                                  username=self._csr_user,
                                                  password=self._csr_password,
                                                  device_params={'name': "csr"},
-                                                 timeout=30)
+                                                 timeout=self._timeout)
                 #self._csr_conn.async_mode = True
                 if not self._intfs_enabled:
                     self._intfs_enabled = self._enable_intfs(self._csr_conn)
             return self._csr_conn
-        except Exception:
-            LOG.exception(_("Failed connecting to CSR1000v. \n"
-                            "Connection Params Host:%(host)s "
-                            "Port:%(port)s User:%(user)s Password:%(pass)s"),
-                          {'host': self._csr_host, 'port': self._csr_ssh_port,
-                           'user': self._csr_user, 'pass': self._csr_password})
+        except Exception as e:
+            conn_params = {'host': self._csr_host, 'port': self._csr_ssh_port,
+                           'user': self._csr_user, 'pass': self._csr_password,
+                           'timeout': self._timeout, 'reason': e.message}
+            raise CSR1000vConnectionException(**conn_params)
 
     def _get_interface_name_from_hosting_port(self, port):
         vlan = self._get_interface_vlan_from_hosting_port(port)
@@ -595,7 +587,7 @@ class CSR1000vRoutingDriver(RoutingDriver):
         return
 
     def _check_response(self, rpc_obj, snippet_name):
-        """This function checks the rpc response object for status
+        """This function checks the rpc response object for status.
 
         This function takes as input the response rpc_obj and the snippet name
         that was executed. It parses it to see, if the last edit operation was
@@ -624,9 +616,7 @@ class CSR1000vRoutingDriver(RoutingDriver):
             LOG.debug(_("RPCReply for %s is OK"), snippet_name)
             return True
         else:
-
-            error_str = ("Error executing snippet %s "
-                         "ErrorType:%s ErrorTag:%s ")
-            logging.error(error_str, snippet_name, rpc_obj._root[0][0].text,
-                          rpc_obj._root[0][1].text)
-            raise Exception("Error!")
+            e_type = rpc_obj._root[0][0].text
+            e_tag = rpc_obj._root[0][1].text
+            params = {'snippet': snippet_name, 'type': e_type, 'tag': e_tag}
+            raise CSR1000vConfigException(**params)

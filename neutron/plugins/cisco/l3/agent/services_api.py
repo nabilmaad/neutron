@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -22,12 +20,15 @@ import six
 
 
 @six.add_metaclass(ABCMeta)
-class RoutingDriver(object):
+class RoutingDriverBase(object):
     """Base class that defines an abstract interface for the Routing Driver.
 
     This class defines the abstract interface/API for the Routing and
     NAT related operations. Driver class corresponding to a hosting device
     should inherit this base driver and implement its methods.
+    router_info object (defined in l3/agent/router_info.py) is a wrapper
+    around the router dictionary, with attributes for easy access for common
+    parameters.
     """
 
     @abstractmethod

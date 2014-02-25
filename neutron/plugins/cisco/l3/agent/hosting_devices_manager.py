@@ -18,6 +18,8 @@
 
 import datetime
 
+from oslo.config import cfg
+
 from neutron.agent.linux import utils as linux_utils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
@@ -25,11 +27,12 @@ from neutron.openstack.common import timeutils
 
 from neutron.plugins.cisco.l3.agent.router_info import RouterInfo
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
-from oslo.config import cfg
 
 LOG = logging.getLogger(__name__)
 
 OPTS = [
+    cfg.IntOpt('device_connection_timeout', default=30,
+               help=_("Timeout value for connecting to a hosting device")),
     cfg.IntOpt('hosting_device_dead_timeout', default=300,
                help=_("The time in seconds until a backlogged hosting device "
                       "is presumed dead. This value should be set up high "
@@ -45,14 +48,22 @@ cfg.CONF.register_opts(OPTS)
 
 
 class HostingDevicesManager(object):
-    """
-    This class manages different hosting devices eg: CSR1000v.
+    """This class acts as a manager for different hosting devices.
 
-    It binds the different logical resources (eg: routers) and where they are
-    hosted. It initialises and maintains drivers, that configuring these
-    hosting devices for various services. Drivers are per hosting device and
-    thus they are reused, if multiple resources (of the same kind) are
-    configured by the same hosting device
+    The hosting devices manager  keeps the relationship between the
+    different logical resources (eg: routers) and where they are
+    hosted. For configuring these logical resources in a hosting device, a set
+    of driver objects are used. The driver objects are device and service
+    specific. When a get_driver() call is made for a specific resource, the
+    hosting device for that resource is extracted from the resource dicts
+    'hosting_device' key. If a driver for that particular hosting device and
+    service combo is found, it is reused, else a new driver is instantiated
+    and returned.
+
+    New drivers can be specified by adding the corresponding class to the OPTS
+    variable and setting a (hosting_device_type, service_type) tuple in the
+    host_driver_binding attribute which is searched for instantiating a
+    driver class.
     """
 
     def __init__(self):
@@ -60,7 +71,9 @@ class HostingDevicesManager(object):
         self._drivers = {}
         self.backlog_hosting_devices = {}
         self.host_driver_binding = {
-            cl3_constants.CSR_ROUTER_TYPE: cfg.CONF.CSR1kv_Routing_Driver
+            (cl3_constants.CSR_ROUTER_TYPE, cl3_constants.SERVICE_ROUTING,
+             cl3_constants.DEV_CFG_PROTO_NETCONF):
+            cfg.CONF.CSR1kv_Routing_Driver,
         }
 
     def get_driver(self, router_info):
@@ -89,16 +102,28 @@ class HostingDevicesManager(object):
             _hd_type = hosting_device['host_type']
             _hd_ip = hosting_device['ip_address']
             _hd_port = hosting_device['port']
+            # Note that we are setting  service as 'Routing' and configuration
+            # protocol as 'NETCONF' as the defaults if they are not specified.
+            _service_type = hosting_device.get('service_type',
+                                               cl3_constants.SERVICE_ROUTING)
+            _config_protocol = hosting_device.get(
+                'config_protocol', cl3_constants.DEV_CFG_PROTO_NETCONF)
 
             #Retreiving auth info from RPC or use defaults if absent
             _hd_user = hosting_device.get('user', 'stack')
             _hd_passwd = hosting_device.get('password', 'cisco')
-            # Lookup driver
+            # Lookup driver based on hd_type, service and config protocol
             try:
-                driver_class = self.host_driver_binding[_hd_type]
+                driver_class = self.host_driver_binding[
+                    (_hd_type, _service_type, _config_protocol)]
             except KeyError:
-                LOG.exception((_("Cannot find driver class for "
-                                 "device type %s "), _hd_type))
+                LOG.exception(_("Cannot find driver class for "
+                                "device type: %(device_type)s, service_type:"
+                                "%(service_type)s and config_protocol:"
+                                "%(config_protocol)s "),
+                              {'device_type': _hd_type,
+                               'service_type': _service_type,
+                               'config_protocol': _config_protocol})
                 raise
             #Load the driver
             try:
@@ -176,6 +201,7 @@ class HostingDevicesManager(object):
 
     def check_backlogged_hosting_devices(self):
         """"Checks the status of backlogged hosting devices.
+
         Has the intelligence to give allowance for the booting time for
         newly spun up instances. Sends back a response dict of the format:
         {'reachable': [<hd_id>,..], 'dead': [<hd_id>,..]}

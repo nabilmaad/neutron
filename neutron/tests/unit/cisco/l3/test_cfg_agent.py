@@ -23,14 +23,19 @@ from oslo.config import cfg
 from neutron.common import config as base_config
 from neutron.common import constants as l3_constants
 from neutron.common import exceptions as n_exc
+from neutron.openstack.common import log as logging
 from neutron.openstack.common import uuidutils
 from neutron.plugins.cisco.l3.agent.cfg_agent import CiscoCfgAgent
 from neutron.plugins.cisco.l3.agent.router_info import RouterInfo
 from neutron.tests import base
 
+from neutron.plugins.cisco.l3.common.exceptions import CSR1000vConfigException
+
 _uuid = uuidutils.generate_uuid
 HOSTNAME = 'myhost'
 FAKE_ID = _uuid()
+
+LOG = logging.getLogger(__name__)
 
 
 class TestBasicRouterOperations(base.BaseTestCase):
@@ -121,6 +126,21 @@ class TestBasicRouterOperations(base.BaseTestCase):
     def test_agent_create(self):
         agent = CiscoCfgAgent(HOSTNAME, self.conf)
         self.assertTrue(isinstance(agent, CiscoCfgAgent))
+
+    def test_process_router_throw_config_error(self):
+        agent = CiscoCfgAgent(HOSTNAME, self.conf)
+        router, ports = self._prepare_router_data()
+        self._mock_driver_and_hosting_device(agent)
+        agent.internal_network_added = mock.Mock()
+        snip_name = 'CREATE_SUBINTERFACE'
+        e_type = 'Type of error'
+        e_tag = 'Error tag'
+        params = {'snippet': snip_name, 'type': e_type, 'tag': e_tag}
+        agent.internal_network_added.side_effect = CSR1000vConfigException(
+            **params)
+        ri = RouterInfo(router['id'], router=router)
+        # Process with initial values
+        agent.process_router(ri)
 
     def test_process_router(self):
         agent = CiscoCfgAgent(HOSTNAME, self.conf)
@@ -314,25 +334,21 @@ class TestBasicRouterOperations(base.BaseTestCase):
     def test_router_deleted(self):
         agent = CiscoCfgAgent(HOSTNAME, self.conf)
         agent.router_deleted(None, FAKE_ID)
-        # verify that will set fullsync
         self.assertIn(FAKE_ID, agent.removed_routers)
 
     def test_routers_updated(self):
         agent = CiscoCfgAgent(HOSTNAME, self.conf)
         agent.routers_updated(None, [FAKE_ID])
-        # verify that will set fullsync
         self.assertIn(FAKE_ID, agent.updated_routers)
 
     def test_removed_from_agent(self):
         agent = CiscoCfgAgent(HOSTNAME, self.conf)
         agent.router_removed_from_agent(None, {'router_id': FAKE_ID})
-        # verify that will set fullsync
         self.assertIn(FAKE_ID, agent.removed_routers)
 
     def test_added_to_agent(self):
         agent = CiscoCfgAgent(HOSTNAME, self.conf)
         agent.router_added_to_agent(None, [FAKE_ID])
-        # verify that will set fullsync
         self.assertIn(FAKE_ID, agent.updated_routers)
 
     def _mock_driver_and_hosting_device(self, agent):
@@ -358,7 +374,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
         agent._router_added(router['id'], router)
 
         hd = self.hosting_device
-        #Simulate book keeping inside the _set_driver() call
+        #This simulates book keeping inside the _set_driver() call
         agent._hdm.router_id_hosting_devices[router['id']] = hd
 
         agent.router_deleted(None, router['id'])
@@ -394,10 +410,6 @@ class TestBasicRouterOperations(base.BaseTestCase):
         self.plugin_api.get_external_network_id.side_effect = (
             n_exc.TooManyExternalNetworks())
         agent._process_routers(routers)
-
-        # self.assertRaises(n_exc.TooManyExternalNetworks,
-        #                   agent._process_routers,
-        #                   routers)
         self.assertIn(routers[0]['id'], agent.router_info)
 
     def test_process_routers_with_ext_net_in_conf(self):

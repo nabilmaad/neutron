@@ -89,9 +89,9 @@ class TestHostingDevice(base.BaseTestCase):
         self.assertEqual(self.hdm.backlog_hosting_devices[123]['routers'],
                          [self.router_id])
 
-    def test_test_is_hosting_device_reachable_negative_exisiting_he(self):
+    def test_test_is_hosting_device_reachable_negative_exisiting_hd(self):
         self.hdm.backlog_hosting_devices.clear()
-        self.hdm.backlog_hosting_devices[123] = {'he': None,
+        self.hdm.backlog_hosting_devices[123] = {'hd': None,
                                                  'routers': [_uuid()]}
 
         self.assertEqual(len(self.hdm.backlog_hosting_devices), 1)
@@ -117,9 +117,9 @@ class TestHostingDevice(base.BaseTestCase):
             "%Y-%m-%dT%H:%M:%S.%f")
 
         self.hosting_device['created_at'] = created_at_str_now
-        he = self.hosting_device
-        he_id = he['id']
-        self.hdm.backlog_hosting_devices[he_id] = {'he': he,
+        hd = self.hosting_device
+        hd_id = hd['id']
+        self.hdm.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                    'routers': [self.router_id]}
 
         self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
@@ -146,9 +146,9 @@ class TestHostingDevice(base.BaseTestCase):
                          expected)
 
     def test_check_backlog_above_booting_time_pingable(self):
-        # This test simulates a HE which has passed the created time.
-        # HE is now pingable.
-
+        """This test simulates a hosting device which has passed the
+           created time. Device is now pingable.
+        """
         #Created time : current time - 420 seconds
         timedelta_420 = datetime.timedelta(seconds=420)
         created_at_420sec = datetime.datetime.utcnow() - timedelta_420
@@ -156,19 +156,20 @@ class TestHostingDevice(base.BaseTestCase):
             "%Y-%m-%dT%H:%M:%S.%f")
 
         self.hosting_device['created_at'] = created_at_420sec_str
-        he = self.hosting_device
-        he_id = he['id']
+        hd = self.hosting_device
+        hd_id = hd['id']
         self.hdm._is_pingable.return_value = True
-        self.hdm.backlog_hosting_devices[he_id] = {'he': he,
+        self.hdm.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                    'routers': [self.router_id]}
-        expected = {'reachable': [he_id],
+        expected = {'reachable': [hd_id],
                     'dead': []}
         self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
                          expected)
 
     def test_check_backlog_above_BT_not_pingable_below_deadtime(self):
-        """This test simulates a HE which has passed the created time
-            but less than the 'declared dead' time. HE is still not pingable
+        """This test simulates a hosting device which has passed the created
+           time but less than the 'declared dead' time.
+           Hosting device is still not pingable.
         """
         #Created time : current time - 420 seconds
         timedelta_420 = datetime.timedelta(seconds=420)
@@ -176,15 +177,15 @@ class TestHostingDevice(base.BaseTestCase):
         created_at_420sec_str = created_at_420sec.strftime(
             "%Y-%m-%dT%H:%M:%S.%f")
 
-        he = self.hosting_device
-        he['created_at'] = created_at_420sec_str
+        hd = self.hosting_device
+        hd['created_at'] = created_at_420sec_str
         #Inserted in backlog after 60 seconds
-        he['backlog_insertion_ts'] = (datetime.datetime.utcnow())
+        hd['backlog_insertion_ts'] = (datetime.datetime.utcnow())
                                       # - datetime.timedelta(seconds=360))
 
-        he_id = he['id']
+        hd_id = hd['id']
         self.hdm._is_pingable.return_value = False
-        self.hdm.backlog_hosting_devices[he_id] = {'he': he,
+        self.hdm.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                    'routers': [self.router_id]}
         expected = {'reachable': [],
                     'dead': []}
@@ -192,8 +193,9 @@ class TestHostingDevice(base.BaseTestCase):
                          expected)
 
     def test_check_backlog_above_BT_not_pingable_aboveDeadTime(self):
-        """This test simulates a HE which has passed the created time
-        but greater than the 'declared dead' time. HE is still not pingable
+        """This test simulates a hosting device which has passed the
+           created time but greater than the 'declared dead' time.
+           Hosting device is still not pingable
         """
         #Created time: Current time - 420(Booting time) - 300(Dead time)seconds
         timedelta_720 = datetime.timedelta(seconds=720)
@@ -201,17 +203,17 @@ class TestHostingDevice(base.BaseTestCase):
         created_at_720sec_str = created_at_720sec.strftime(
             "%Y-%m-%dT%H:%M:%S.%f")
 
-        he = self.hosting_device
-        he['created_at'] = created_at_720sec_str
+        hd = self.hosting_device
+        hd['created_at'] = created_at_720sec_str
         #Inserted in backlog after 60 seconds
-        he['backlog_insertion_ts'] = (datetime.datetime.utcnow() -
+        hd['backlog_insertion_ts'] = (datetime.datetime.utcnow() -
                                       datetime.timedelta(seconds=420))
 
-        he_id = he['id']
+        hd_id = hd['id']
         self.hdm._is_pingable.return_value = False
-        self.hdm.backlog_hosting_devices[he_id] = {'he': he,
+        self.hdm.backlog_hosting_devices[hd_id] = {'hd': hd,
                                                    'routers': [self.router_id]}
         expected = {'reachable': [],
-                    'dead': [he_id]}
+                    'dead': [hd_id]}
         self.assertEqual(self.hdm.check_backlogged_hosting_devices(),
                          expected)

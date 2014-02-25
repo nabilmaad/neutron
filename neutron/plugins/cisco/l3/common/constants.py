@@ -44,6 +44,14 @@ CSR1kv_SSH_NETCONF_PORT = 22
 # Topic for Cisco configuration agent
 CFG_AGENT = 'cisco_cfg_agent'
 
+# Service Types : Used for loading the Hosting device manager to load the right
+# driver class for a particular service
+SERVICE_ROUTING = "routing"
+
+#Device Configuration Protocol
+DEV_CFG_PROTO_NETCONF = "NETCONF"
+DEV_CFG_PROTO_REST = "REST_API"
+
 # Service VM status
 SVM_OK = 'OK'
 SVM_ERROR = 'ERROR'

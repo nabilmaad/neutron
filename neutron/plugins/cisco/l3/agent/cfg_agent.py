@@ -17,6 +17,8 @@
 import eventlet
 import netaddr
 
+from oslo.config import cfg
+
 from neutron.agent.common import config
 from neutron.agent.linux import external_process
 from neutron.agent.linux import interface
@@ -39,8 +41,8 @@ from neutron.plugins.cisco.l3.agent.hosting_devices_manager import (
     HostingDevicesManager)
 from neutron.plugins.cisco.l3.agent.router_info import RouterInfo
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
+from neutron.plugins.cisco.l3.common.exceptions import DriverException
 from neutron import service as neutron_service
-from oslo.config import cfg
 
 LOG = logging.getLogger(__name__)
 
@@ -188,79 +190,87 @@ class CiscoCfgAgent(manager.Manager):
         return ri.router.get('gw_port')
 
     def process_router(self, ri):
-        ex_gw_port = self._get_ex_gw_port(ri)
-        ri.ha_info = ri.router.get('ha_info', None)
-        internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
-        existing_port_ids = set([p['id'] for p in ri.internal_ports])
-        current_port_ids = set([p['id'] for p in internal_ports
-                                if p['admin_state_up']])
-        new_ports = [p for p in internal_ports if
-                     p['id'] in current_port_ids and
-                     p['id'] not in existing_port_ids]
-        old_ports = [p for p in ri.internal_ports if
-                     p['id'] not in current_port_ids]
+        try:
+            ex_gw_port = self._get_ex_gw_port(ri)
+            ri.ha_info = ri.router.get('ha_info', None)
+            internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
+            existing_port_ids = set([p['id'] for p in ri.internal_ports])
+            current_port_ids = set([p['id'] for p in internal_ports
+                                    if p['admin_state_up']])
+            new_ports = [p for p in internal_ports if
+                         p['id'] in current_port_ids and
+                         p['id'] not in existing_port_ids]
+            old_ports = [p for p in ri.internal_ports if
+                         p['id'] not in current_port_ids]
 
-        for p in new_ports:
-            self._set_subnet_info(p)
-            self.internal_network_added(ri, p, ex_gw_port)
-            ri.internal_ports.append(p)
+            for p in new_ports:
+                self._set_subnet_info(p)
+                self.internal_network_added(ri, p, ex_gw_port)
+                ri.internal_ports.append(p)
 
-        for p in old_ports:
-            self.internal_network_removed(ri, p, ri.ex_gw_port)
-            ri.internal_ports.remove(p)
+            for p in old_ports:
+                self.internal_network_removed(ri, p, ri.ex_gw_port)
+                ri.internal_ports.remove(p)
 
-        if ex_gw_port and not ri.ex_gw_port:
-            self._set_subnet_info(ex_gw_port)
-            self.external_gateway_added(ri, ex_gw_port)
-        elif not ex_gw_port and ri.ex_gw_port:
-            self.external_gateway_removed(ri, ri.ex_gw_port)
+            if ex_gw_port and not ri.ex_gw_port:
+                self._set_subnet_info(ex_gw_port)
+                self.external_gateway_added(ri, ex_gw_port)
+            elif not ex_gw_port and ri.ex_gw_port:
+                self.external_gateway_removed(ri, ri.ex_gw_port)
 
-        if ex_gw_port:
-            self.process_router_floating_ips(ri, ex_gw_port)
+            if ex_gw_port:
+                self.process_router_floating_ips(ri, ex_gw_port)
 
-        ri.ex_gw_port = ex_gw_port
-        self.routes_updated(ri)
+            ri.ex_gw_port = ex_gw_port
+            self.routes_updated(ri)
+        except DriverException as e:
+            LOG.error(e)
 
     def process_router_floating_ips(self, ri, ex_gw_port):
-        floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
-        existing_floating_ip_ids = set([fip['id'] for fip in ri.floating_ips])
-        cur_floating_ip_ids = set([fip['id'] for fip in floating_ips])
+        try:
+            floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
+            existing_floating_ip_ids = set(
+                [fip['id'] for fip in ri.floating_ips])
+            cur_floating_ip_ids = set([fip['id'] for fip in floating_ips])
 
-        id_to_fip_map = {}
+            id_to_fip_map = {}
 
-        for fip in floating_ips:
-            if fip['port_id']:
-                if fip['id'] not in existing_floating_ip_ids:
-                    ri.floating_ips.append(fip)
-                    self.floating_ip_added(ri, ex_gw_port,
-                                           fip['floating_ip_address'],
-                                           fip['fixed_ip_address'])
+            for fip in floating_ips:
+                if fip['port_id']:
+                    if fip['id'] not in existing_floating_ip_ids:
+                        ri.floating_ips.append(fip)
+                        self.floating_ip_added(ri, ex_gw_port,
+                                               fip['floating_ip_address'],
+                                               fip['fixed_ip_address'])
 
-                # store to see if floatingip was remapped
-                id_to_fip_map[fip['id']] = fip
+                    # store to see if floatingip was remapped
+                    id_to_fip_map[fip['id']] = fip
 
-        floating_ip_ids_to_remove = (existing_floating_ip_ids -
-                                     cur_floating_ip_ids)
-        for fip in ri.floating_ips:
-            if fip['id'] in floating_ip_ids_to_remove:
-                ri.floating_ips.remove(fip)
-                self.floating_ip_removed(ri, ri.ex_gw_port,
-                                         fip['floating_ip_address'],
-                                         fip['fixed_ip_address'])
-            else:
-                # handle remapping of a floating IP
-                new_fip = id_to_fip_map[fip['id']]
-                new_fixed_ip = new_fip['fixed_ip_address']
-                existing_fixed_ip = fip['fixed_ip_address']
-                if (new_fixed_ip and existing_fixed_ip and
-                        new_fixed_ip != existing_fixed_ip):
-                    floating_ip = fip['floating_ip_address']
-                    self.floating_ip_removed(ri, ri.ex_gw_port,
-                                             floating_ip, existing_fixed_ip)
-                    self.floating_ip_added(ri, ri.ex_gw_port,
-                                           floating_ip, new_fixed_ip)
+            floating_ip_ids_to_remove = (existing_floating_ip_ids -
+                                         cur_floating_ip_ids)
+            for fip in ri.floating_ips:
+                if fip['id'] in floating_ip_ids_to_remove:
                     ri.floating_ips.remove(fip)
-                    ri.floating_ips.append(new_fip)
+                    self.floating_ip_removed(ri, ri.ex_gw_port,
+                                             fip['floating_ip_address'],
+                                             fip['fixed_ip_address'])
+                else:
+                    # handle remapping of a floating IP
+                    new_fip = id_to_fip_map[fip['id']]
+                    new_fixed_ip = new_fip['fixed_ip_address']
+                    existing_fixed_ip = fip['fixed_ip_address']
+                    if (new_fixed_ip and existing_fixed_ip and
+                            new_fixed_ip != existing_fixed_ip):
+                        floating_ip = fip['floating_ip_address']
+                        self.floating_ip_removed(ri, ri.ex_gw_port,
+                                                 floating_ip,
+                                                 existing_fixed_ip)
+                        self.floating_ip_added(ri, ri.ex_gw_port,
+                                               floating_ip, new_fixed_ip)
+                        ri.floating_ips.remove(fip)
+                        ri.floating_ips.append(new_fip)
+        except DriverException as e:
+            LOG.error(e)
 
     def external_gateway_added(self, ri, ex_gw_port):
         driver = self._hdm.get_driver(ri)
@@ -367,7 +377,7 @@ class CiscoCfgAgent(manager.Manager):
             cur_router_ids.add(r['id'])
             if not self._hdm.is_hosting_device_reachable(r['id'], r):
                 LOG.info(_("Router: %(id)s is on unreachable hosting device. "
-                         "Skip processing it."), {'id': r['id']})
+                           "Skip processing it."), {'id': r['id']})
                 continue
             if r['id'] not in self.router_info:
                 self._router_added(r['id'], r)
