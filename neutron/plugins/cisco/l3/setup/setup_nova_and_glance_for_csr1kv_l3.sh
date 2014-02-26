@@ -95,7 +95,7 @@ done
 
 
 echo "Removing relevant quota limits ..."
-nova quota-update --cores -1 --instances -1 --ram -1 $tenantId
+nova quota-update --user $adminUser --cores -1 --instances -1 --ram -1 $tenantId
 
 
 echo -n "Checking if $csr1kvImageName image exists ..."
