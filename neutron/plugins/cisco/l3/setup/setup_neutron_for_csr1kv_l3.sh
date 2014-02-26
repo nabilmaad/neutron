@@ -227,7 +227,8 @@ hasMgmtSubnet=`$osn subnet-show $osnMgmtSubnetName 2>&1 | awk '/Unable to find|V
 
 if [ "$hasMgmtSubnet" == "No" ]; then
     echo " No, it does not. Creating it."
-    $osn subnet-create --name $osnMgmtSubnetName --tenant-id $tenantId --allocation-pool start=$osnMgmtRangeStart,end=$osnMgmtRangeEnd $osnMgmtNwName $osnMgmtSubnet
+    # Disabling DHCP on mgmt subnet due to Nova bug #1220856 (https://bugs.launchpad.net/nova/+bug/1220856)
+    $osn subnet-create --name $osnMgmtSubnetName --tenant-id $tenantId --allocation-pool start=$osnMgmtRangeStart,end=$osnMgmtRangeEnd $osnMgmtNwName $osnMgmtSubnet --disable-dhcp
 else
     echo " Yes, it does."
 fi
