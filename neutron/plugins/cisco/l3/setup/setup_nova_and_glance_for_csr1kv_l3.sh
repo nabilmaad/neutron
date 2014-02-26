@@ -9,7 +9,7 @@ adminUser=${1:-neutron}
 localrc=$2
 
 if [[ ! -z $localrc && -f $localrc ]]; then
-    source $localrc
+    eval $(grep ^Q_CISCO_CSR1KV_QCOW2_IMAGE= ./localrc)
 fi
 
 l3AdminTenant="L3AdminTenant"

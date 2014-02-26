@@ -49,9 +49,13 @@ delete_service_resources_by_name $osn subnet t2_sn:
 delete_service_resources_by_name $osn net t1_n:
 delete_service_resources_by_name $osn net t2_n:
 
-source ~/devstack/localrc
-MYSQL_USER=${MYSQL_USER:-root}
-table="cisco_$osn"
+devstack_dir=$(find -L $HOME -name devstack -type d)
+
+eval $(grep ^MYSQL_USER= $devstack_dir/lib/database)
+eval $(grep ^MYSQL_USER= $devstack_dir/localrc)
+eval $(grep ^MYSQL_PASSWORD= $devstack_dir/localrc)
+eval $(grep ^Q_PLUGIN= $devstack_dir/localrc)
+table="$Q_PLUGIN_$osn"
 
 mysql -u$MYSQL_USER -p$MYSQL_PASSWORD -e "use $table; delete from hostingdevices;"
 

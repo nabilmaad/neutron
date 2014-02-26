@@ -11,7 +11,9 @@ plugin=${2:-n1kv}
 localrc=$3
 
 if [[ ! -z $localrc && -f $localrc ]]; then
-    source $localrc
+    eval $(grep ^Q_CISCO_PLUGIN_VSM_IP= ./localrc)
+    eval $(grep Q_CISCO_PLUGIN_VSM_USERNAME= ./localrc)
+    eval $(grep ^Q_CISCO_PLUGIN_VSM_PASSWORD= ./localrc)
 fi
 
 adminUser=$osn
