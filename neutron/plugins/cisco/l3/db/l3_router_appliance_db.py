@@ -94,9 +94,6 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         return hosting_device_manager_db.HostingDeviceManager.get_instance()
 
     def create_router(self, context, router):
-#        self._dev_mgr.delete_all_service_vm_hosting_devices(
-#           context.elevated(), cl3_const.CSR1KV_HOST)
-#        return router
         r = router['router']
         # Bob: Hard coding router type to shared CSR1kv for now
         r['router_type'] = cfg.CONF.default_router_type
@@ -126,24 +123,25 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         old_ext_gw = (o_r_db.gw_port or {}).get('network_id')
         new_ext_gw = r.get('external_gateway_info', {}).get('network_id')
         with context.session.begin(subtransactions=True):
+            e_context = context.elevated()
             if old_ext_gw is not None and old_ext_gw != new_ext_gw:
                 o_r = self._make_router_dict(o_r_db, process_extensions=False)
                 # no need to schedule now since we're only doing this to
                 # tear-down connectivity and there won't be any if not
                 # already scheduled.
-                self._add_type_and_hosting_device_info(context, o_r,
+                self._add_type_and_hosting_device_info(e_context, o_r,
                                                        schedule=False)
                 host_type = (o_r['hosting_device'] or {}).get('host_type')
                 p_drv = self._dev_mgr.get_hosting_device_plugging_driver(
                     context, host_type)
                 if p_drv is not None:
-                    p_drv.teardown_logical_port_connectivity(context,
+                    p_drv.teardown_logical_port_connectivity(e_context,
                                                              o_r_db.gw_port)
             router_updated = (
                 super(L3_router_appliance_db_mixin, self).update_router(
                     context, id, router))
             routers = [copy.deepcopy(router_updated)]
-            self._add_type_and_hosting_device_info(context, routers[0])
+            self._add_type_and_hosting_device_info(e_context, routers[0])
         l3_rpc_joint_agent_api.L3JointAgentNotify.routers_updated(
             context, routers)
         return router_updated
@@ -152,14 +150,15 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         router_db = self._get_router(context, id)
         router = self._make_router_dict(router_db)
         with context.session.begin(subtransactions=True):
-            self._add_type_and_hosting_device_info(context, router,
+            e_context = context.elevated()
+            self._add_type_and_hosting_device_info(e_context, router,
                                                    schedule=False)
             if router_db.gw_port is not None:
                 host_type = (router['hosting_device'] or {}).get('host_type')
                 p_drv = self._dev_mgr.get_hosting_device_plugging_driver(
                     context, host_type)
                 if p_drv is not None:
-                    p_drv.teardown_logical_port_connectivity(context,
+                    p_drv.teardown_logical_port_connectivity(e_context,
                                                              router_db.gw_port)
             # conditionally remove router from backlog just to be sure
             self.remove_router_from_backlog('id')
@@ -173,7 +172,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             info = (super(L3_router_appliance_db_mixin, self).
                     add_router_interface(context, router_id, interface_info))
             routers = [self.get_router(context, router_id)]
-            self._add_type_and_hosting_device_info(context, routers[0])
+            self._add_type_and_hosting_device_info(context.elevated(),
+                                                   routers[0])
         l3_rpc_joint_agent_api.L3JointAgentNotify.routers_updated(
             context, routers, 'add_router_interface')
         return info
@@ -192,12 +192,13 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             raise n_exc.BadRequest(resource='router', msg=msg)
         routers = [self.get_router(context, router_id)]
         with context.session.begin(subtransactions=True):
-            self._add_type_and_hosting_device_info(context, routers[0])
+            e_context = context.elevated()
+            self._add_type_and_hosting_device_info(e_context, routers[0])
             host_type = (routers[0]['hosting_device'] or {}).get('host_type')
             p_drv = self._dev_mgr.get_hosting_device_plugging_driver(
                 context, host_type)
             if p_drv is not None:
-                p_drv.teardown_logical_port_connectivity(context, port_db)
+                p_drv.teardown_logical_port_connectivity(e_context, port_db)
             info = (super(L3_router_appliance_db_mixin, self).
                     remove_router_interface(context, router_id,
                                             interface_info))
@@ -211,7 +212,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 context, floatingip)
             if info['router_id']:
                 routers = [self.get_router(context, info['router_id'])]
-                self._add_type_and_hosting_device_info(context, routers[0])
+                self._add_type_and_hosting_device_info(context.elevated(),
+                                                       routers[0])
                 l3_rpc_joint_agent_api.L3JointAgentNotify.routers_updated(
                     context, routers, 'create_floatingip')
         return info
@@ -232,7 +234,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
             routers = []
             for router_id in router_ids:
                 router = self.get_router(context, router_id)
-                self._add_type_and_hosting_device_info(context, router)
+                self._add_type_and_hosting_device_info(context.elevated(),
+                                                       router)
                 routers.append(router)
         l3_rpc_joint_agent_api.L3JointAgentNotify.routers_updated(
             context, routers, 'update_floatingip')
@@ -246,7 +249,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 context, id)
             if router_id:
                 routers = [self.get_router(context, router_id)]
-                self._add_type_and_hosting_device_info(context, routers[0])
+                self._add_type_and_hosting_device_info(context.elevated(),
+                                                       routers[0])
                 l3_rpc_joint_agent_api.L3JointAgentNotify.routers_updated(
                     context, routers, 'delete_floatingip')
 
@@ -267,7 +271,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                                 % port_id)
             if router_id:
                 routers = [self.get_router(context, router_id)]
-                self._add_type_and_hosting_device_info(context, routers[0])
+                self._add_type_and_hosting_device_info(context.elevated(),
+                                                       routers[0])
                 l3_rpc_joint_agent_api.L3JointAgentNotify.routers_updated(
                     context, routers)
 
