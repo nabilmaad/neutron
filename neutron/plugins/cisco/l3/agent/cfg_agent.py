@@ -100,9 +100,14 @@ class CiscoCfgAgent(manager.Manager):
 
     This class defines a generic configuration agent for cisco devices which
     implement network services in the cloud backend. It is based on the
-    reference l3 agent . The agent does not do any configuration. All device
-    specific configuration are done by hosting device drivers which
-    implement the service api for corresponding services (eg: Routing)
+    (reference) l3-agent, and tries to preserve code where possible.
+
+    The agent by itself does not do any configuration. All device specific
+    configurations are done by hosting device drivers which implement the
+    service api, (defined in service_api.py) for various services (eg: Routing)
+
+    The main entry points in this class are the `_sync_routers_task()` and
+    `_rpc_loop()` .
     """
     RPC_API_VERSION = '1.1'
 
@@ -156,12 +161,31 @@ class CiscoCfgAgent(manager.Manager):
                     raise Exception(msg)
 
     def _router_added(self, router_id, router):
+        """Operations when a router is added
+
+        We create a new RouterInfo object for this router and add it to the
+        agent's router_info dictionary. We call router_added on the driver.
+
+        :param router_id: id of the router
+        :param router: router dict
+        :return: None
+        """
         ri = RouterInfo(router_id, router)
         driver = self._hdm.get_driver(ri)
         driver.router_added(ri)
         self.router_info[router_id] = ri
 
     def _router_removed(self, router_id, deconfigure=True):
+        """ Operations when a router is removed
+
+        We get a RouterInfo object corresponding to the router in the agent's
+        router_info dict. If deconfigure is set to True, we remove the router's
+        configuration from the hosting device.
+        :param router_id: id of the router
+        :param deconfigure: if True, the router's configuration is deleted from
+        the hosting device.
+        :return:
+        """
         ri = self.router_info.get(router_id)
         if ri is None:
             LOG.warn(_("Info for router %s was not found. "
@@ -199,6 +223,23 @@ class CiscoCfgAgent(manager.Manager):
         return ri.router.get('gw_port')
 
     def process_router(self, ri):
+        """Process a router, apply latest configuration, update router_info
+
+        We get the router dict from  router_info and compare to detect changes
+        from the last known state. We detect new ports or deleted ports and
+        call `internal_network_added()` or `internal_networks_removed()`
+        accordingly. Similiarly changes in ex_gw_port causes
+        `external_gateway_added()` or `external_gateway_removed()` calls. Also
+        we process floating_ips and routes.
+        We set the current state in ri.internal_ports and ri.ex_gw_port for
+        future comparisons.
+
+        :param ri: neutron.plugins.cisco.l3.agent.router_info.RouterInfo
+        corresponding to the router being processed.
+        :return: None
+        :raises neutron.plugins.cisco.l3.common.exceptions.DriverException if
+        the configuration operation fails.
+        """
         try:
             ex_gw_port = self._get_ex_gw_port(ri)
             ri.ha_info = ri.router.get('ha_info', None)
@@ -331,8 +372,8 @@ class CiscoCfgAgent(manager.Manager):
             self.updated_routers.update(routers)
 
     def hosting_device_removed(self, context, payload):
-        """RPC Notification that a hosting device was removed.
-        Expected Payload format:
+        """Deal with hosting device removed RPC message.
+        Payload format:
         {
              'hosting_data': {'hd_id1': {'routers': [id1, id2, ...]},
                               'hd_id2': {'routers': [id3, id4, ...]}, ... },
@@ -355,6 +396,21 @@ class CiscoCfgAgent(manager.Manager):
         self.routers_updated(context, payload)
 
     def _process_routers(self, routers, all_routers=False):
+        """ Process the set of routers
+
+        Iterating on the set of routers  received and comparing it with the
+        set of routers already in the agent, new routers which are added are
+        identified. We check the reachability of hosting device where the
+        router is hosted and backlogs them if neccessary. For routers which
+        are only updated, we call `process_router()` for them. Note that this
+        is done in an independent thread.
+
+        When all_routers is set to True, this will result in the detection and
+        deletion of routers which are removed also.
+        :param routers: The set of routers to be processed
+        :param all_routers: Flag for specifying a partial list of routers
+        :return: None
+        """
         pool = eventlet.GreenPool()
         if (self.conf.external_network_bridge and
                 not (ip_lib.device_exists(self.conf.external_network_bridge))):
@@ -377,7 +433,7 @@ class CiscoCfgAgent(manager.Manager):
         for r in routers:
             if not r['admin_state_up']:
                 continue
-                # Note: Whether the router can only be assigned to a particular
+            # Note: Whether the router can only be assigned to a particular
             # hosting device is decided and enforced by the plugin.
             # So no checks are done here.
             ex_net_id = (r['external_gateway_info'] or {}).get('network_id')
@@ -470,6 +526,18 @@ class CiscoCfgAgent(manager.Manager):
     @periodic_task.periodic_task
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def _sync_routers_task(self, context):
+        """Synchronize routers
+
+        Synchronizes routers with period of `DEFAULT_INTERVAL` of the
+        periodic_scheduler (default=60).When this method executes and
+        `full_sync` flag is True, this method fetches all the routers
+        from the plugin and process them. This can cause routers to be
+        added/modified/deleted from the hosting device.
+        When `full_sync` is False, we process all the backlogged hosting
+        devices.
+        :param context:
+        :return: None
+        """
         LOG.debug(_("Starting _sync_routers_task - fullsync:%s"),
                   self.fullsync)
         if self.fullsync:

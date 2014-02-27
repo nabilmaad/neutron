@@ -26,9 +26,9 @@ class RoutingDriverBase(object):
     This class defines the abstract interface/API for the Routing and
     NAT related operations. Driver class corresponding to a hosting device
     should inherit this base driver and implement its methods.
-    router_info object (defined in l3/agent/router_info.py) is a wrapper
-    around the router dictionary, with attributes for easy access for common
-    parameters.
+    RouterInfo object (neutron.plugins.cisco.l3.agent.router_info.RouterInfo)
+    is a wrapper around the router dictionary, with attributes for easy access
+    to parameters.
     """
 
     @abstractmethod
@@ -36,7 +36,7 @@ class RoutingDriverBase(object):
         """A logical router is assigned to the hosting device
 
            returns: None
-           :param router_info: Router_info object for this router
+           :param router_info: RouterInfo object for this router
         """
         pass
 
@@ -45,7 +45,7 @@ class RoutingDriverBase(object):
         """A logical router is de-assigned from the hosting device
 
            returns: None
-           :param router_info: Router_info object for this router
+           :param router_info: RouterInfo object for this router
         """
 
         pass
@@ -55,7 +55,7 @@ class RoutingDriverBase(object):
         """An internal network is connected to a router
 
             returns: None
-            :param router_info: Router_info object for this router
+            :param router_info: RouterInfo object for this router
             :param port : port dictionary for the port where the internal
                           network is connected
         """
@@ -66,7 +66,7 @@ class RoutingDriverBase(object):
         """An internal network is removed from a router
 
            returns: None
-           :param router_info: Router_info object for this router
+           :param router_info: RouterInfo object for this router
            :param port : port dictionary for the port where the internal
                          network was connected
         """
@@ -77,7 +77,7 @@ class RoutingDriverBase(object):
         """An external network is added to a router
 
            returns: None
-           :param router_info: Router_info object of the router
+           :param router_info: RouterInfo object of the router
            :param ex_gw_port : port dictionary for the port where the external
                                gateway network is connected
         """
@@ -88,7 +88,7 @@ class RoutingDriverBase(object):
         """An external network is removed from the router
 
            returns: None
-           :param router_info: Router_info object of the router
+           :param router_info: RouterInfo object of the router
            :param ex_gw_port : port dictionary for the port where the external
                                gateway network was connected
         """
@@ -99,7 +99,7 @@ class RoutingDriverBase(object):
         """Enable NAT on an internal network
 
            returns: None
-           :param router_info: Router_info object for this router
+           :param router_info: RouterInfo object for this router
            :param port       : port dictionary for the port where the internal
                                network is connected
            :param ex_gw_port : port dictionary for the port where the external
@@ -112,7 +112,7 @@ class RoutingDriverBase(object):
         """Diable NAT on an internal network
 
            returns: None
-           :param router_info: Router_info object for this router
+           :param router_info: RouterInfo object for this router
            :param port       : port dictionary for the port where the internal
                                network is connected
            :param ex_gw_port : port dictionary for the port where the external
@@ -126,7 +126,7 @@ class RoutingDriverBase(object):
         """A floating IP is added
 
            returns: None
-           :param router_info: Router_info object for this router
+           :param router_info: RouterInfo object for this router
            :param ex_gw_port : port dictionary for the port where the external
                                gateway network is connected
            :param floating_ip: Floating IP as a string
@@ -141,7 +141,7 @@ class RoutingDriverBase(object):
         """A floating IP is removed
 
            returns: None
-           :param router_info: Router_info object for this router
+           :param router_info: RouterInfo object for this router
            :param ex_gw_port : port dictionary for the port where the external
             gateway network is connected
            :param floating_ip: Floating IP as a string
@@ -154,7 +154,7 @@ class RoutingDriverBase(object):
         """Routes are updated for router
 
            returns: None
-           :param router_info: Router_info object for this router
+           :param router_info: RouterInfo object for this router
            :param action : Action on the route , either 'replace' or 'delete'
            :param route: route dictionary with keys 'destination' & 'next_hop'
         """
