@@ -61,7 +61,7 @@ class TestBasicRouterOperations(base.BaseTestCase):
             'routes': [],
             'gw_port': self.ex_gw_port}
 
-        #Patches
+        #Patches & Mocks
         self.device_exists_p = mock.patch(
             'neutron.agent.linux.ip_lib.device_exists')
         self.device_exists = self.device_exists_p.start()
@@ -69,6 +69,10 @@ class TestBasicRouterOperations(base.BaseTestCase):
             'neutron.plugins.cisco.l3.agent.cfg_agent.CiscoL3PluginApi')
         l3pluginApi_cls = self.l3pluginApi_cls_p.start()
         self.plugin_api = mock.Mock()
+        # Setting return value of get_routers() rpc call to an empty list
+        # incase an _rpc_loop is executed with values in updated_router(Side
+        # effect of an DriverException thrown)
+        self.plugin_api.get_routers.return_value = []
         l3pluginApi_cls.return_value = self.plugin_api
 
         self.addCleanup(mock.patch.stopall)
@@ -133,14 +137,17 @@ class TestBasicRouterOperations(base.BaseTestCase):
         self._mock_driver_and_hosting_device(agent)
         agent.internal_network_added = mock.Mock()
         snip_name = 'CREATE_SUBINTERFACE'
-        e_type = 'Type of error'
-        e_tag = 'Error tag'
+        e_type = 'Fake error'
+        e_tag = 'Fake error tag'
         params = {'snippet': snip_name, 'type': e_type, 'tag': e_tag}
         agent.internal_network_added.side_effect = CSR1000vConfigException(
             **params)
         ri = RouterInfo(router['id'], router=router)
-        # Process with initial values
-        agent.process_router(ri)
+        self.assertRaises(CSR1000vConfigException,
+                          agent.process_router, ri)
+        #Clean up updated_routers set.
+        agent.updated_routers.clear()
+        agent.internal_network_added.reset_mock()
 
     def test_process_router(self):
         agent = CiscoCfgAgent(HOSTNAME, self.conf)
