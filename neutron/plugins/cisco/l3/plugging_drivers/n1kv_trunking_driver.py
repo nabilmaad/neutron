@@ -397,9 +397,9 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                               'tag': port_db.hosting_info.segmentation_tag,
                               'id': port_db['network_id']})
         #TODO(bobmel): enable line below when N1kv does not trunk all
-        self._core_plugin.update_network(
-            context, port_db.hosting_info.hosting_port['network_id'],
-            {'network': {action: trunk_spec}})
+        #self._core_plugin.update_network(
+        #    context, port_db.hosting_info.hosting_port['network_id'],
+        #    {'network': {action: trunk_spec}})
 
     def _get_trunk_mappings(self, context, hosting_port_id):
         query = context.session.query(HostedHostingPortBinding)
