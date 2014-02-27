@@ -401,10 +401,23 @@ class CiscoCfgAgent(manager.Manager):
 
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def _rpc_loop(self):
-        # _rpc_loop and _sync_routers_task will not be
-        # executed in the same time because of lock.
-        # so we can clear the value of updated_routers
-        # and removed_routers
+        """ Process routers received via RPC
+
+        This method  executes every `RPC_LOOP_INTERVAL` seconds and processes
+        routers which have been notified via RPC from the plugin. Plugin sends
+        RPC messages for updated or removed routers, whose router_ids are kept
+        in `updated_routers` and `removed_routers` respectively. For router in
+        `updated_routers` we fetch the latest state for these routers from
+        the plugin and process them. Routers in `removed_routers` are
+        removed from the hosting device and from the set of routers which the
+        agent is tracking (router_info attribute).
+
+        Note that this will not be executed at the same time as the
+        `_sync_routers_task()` because of the lock which avoids race conditions
+         on `updated_routers` and `removed_routers`
+
+        :return: None
+        """
         try:
             LOG.debug(_("Starting RPC loop for %d updated routers"),
                       len(self.updated_routers))
@@ -422,10 +435,37 @@ class CiscoCfgAgent(manager.Manager):
             self.fullsync = True
 
     def _process_router_delete(self):
+        """Process routers in the `removed_routers` set"""
         current_removed_routers = list(self.removed_routers)
         for router_id in current_removed_routers:
             self._router_removed(router_id)
             self.removed_routers.remove(router_id)
+
+    def _process_backlogged_hosting_devices(self, context):
+        """Process currently back logged devices
+
+        We go through the currently backlogged devices and process them.
+        For devices which are now reachable (compared to last time), we fetch
+        the routers they are hosting and process them.
+        For devices which have passed the `hosting_device_dead_timeout` and
+        hence presumed dead, we execute a RPC to the plugin informing that.
+        :param context: RPC context
+        :return: None
+        """
+        res = self._hdm.check_backlogged_hosting_devices()
+        if res['reachable']:
+            #Fetch routers for this reachable Hosting Device
+            LOG.debug(_("Requesting routers for hosting devices: %s "
+                        "that are now responding."), res['reachable'])
+            routers = self.plugin_rpc.get_routers(
+                context, router_ids=None, hd_ids=res['reachable'])
+            self._process_routers(routers, all_routers=True)
+        if res['dead']:
+            LOG.debug(_("Reporting dead hosting devices: %s"),
+                      res['dead'])
+            # Process dead hosting device
+            self.plugin_rpc.report_dead_hosting_devices(
+                context, hd_ids=res['dead'])
 
     @periodic_task.periodic_task
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
@@ -449,25 +489,22 @@ class CiscoCfgAgent(manager.Manager):
                 self.fullsync = True
         else:
             LOG.debug(_("Full sync is False. Processing backlog."))
-            res = self._hdm.check_backlogged_hosting_devices()
-            if res['reachable']:
-                #Fetch routers for this reachable Hosting Device
-                LOG.debug(_("Requesting routers for hosting devices: %s "
-                            "that are now responding."), res['reachable'])
-                routers = self.plugin_rpc.get_routers(
-                    context, router_ids=None, hd_ids=res['reachable'])
-                self._process_routers(routers, all_routers=True)
-            if res['dead']:
-                LOG.debug(_("Reporting dead hosting devices: %s"),
-                          res['dead'])
-                # Process dead hosting device
-                self.plugin_rpc.report_dead_hosting_devices(
-                    context, hd_ids=res['dead'])
+            self._process_backlogged_hosting_devices(context)
 
     def after_start(self):
         LOG.info(_("Cisco cfg agent started"))
 
     def routes_updated(self, ri):
+        """ Update the state of routes in the router
+
+         We compare the current routes with the existing routes configured
+         and detect what was removed or added and configure the router in the
+         hosting device accordingly.
+        :param ri: router_info corresponding to the router.
+        :return: None
+        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
+        the configuration operation fails.
+        """
         new_routes = ri.router['routes']
         old_routes = ri.routes
         adds, removes = common_utils.diff_list_of_dict(old_routes,
