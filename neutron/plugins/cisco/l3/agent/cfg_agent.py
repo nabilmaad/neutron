@@ -575,7 +575,7 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
 def main(manager='neutron.plugins.cisco.l3.agent.'
                  'cfg_agent.CiscoCfgAgentWithStateReport'):
-    #eventlet.monkey_patch()
+    eventlet.monkey_patch()
     conf = cfg.CONF
     conf.register_opts(CiscoCfgAgent.OPTS)
     config.register_agent_state_opts_helper(conf)
