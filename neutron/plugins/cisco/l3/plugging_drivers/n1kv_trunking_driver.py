@@ -392,8 +392,8 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                           str(port_db.hosting_info.segmentation_tag))
         else:
             trunk_spec = port_db['network_id']
-        LOG.info(_('Updating trunk: %(action) VLAN %(tag) for network_id '
-                   '%(id)'), {'action': action,
+        LOG.info(_('Updating trunk: %(action)s VLAN %(tag)d for network_id '
+                   '%(id)s'), {'action': action,
                               'tag': port_db.hosting_info.segmentation_tag,
                               'id': port_db['network_id']})
         #TODO(bobmel): enable line below when N1kv does not trunk all
