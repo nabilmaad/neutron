@@ -127,6 +127,7 @@ class CiscoCfgAgent(manager.Manager):
         self.updated_routers = set()
         self.removed_routers = set()
         self.sync_progress = False
+        self.admin_status_up = True
         self._hdm = HostingDevicesManager()
         self.rpc_loop = loopingcall.FixedIntervalLoopingCall(
             self._rpc_loop)
@@ -163,18 +164,26 @@ class CiscoCfgAgent(manager.Manager):
     def _router_removed(self, router_id, deconfigure=True):
         ri = self.router_info.get(router_id)
         if ri is None:
-            LOG.warn(_("Info for router %s were not found. "
+            LOG.warn(_("Info for router %s was not found. "
                        "Skipping router removal"), router_id)
             return
         ri.router['gw_port'] = None
         ri.router[l3_constants.INTERFACE_KEY] = []
         ri.router[l3_constants.FLOATINGIP_KEY] = []
-        if deconfigure:
-            self.process_router(ri)
-            driver = self._hdm.get_driver(ri)
-            driver.router_removed(ri, deconfigure)
-            self._hdm.remove_driver(router_id)
-        del self.router_info[router_id]
+        try:
+            if deconfigure:
+                self.process_router(ri)
+                driver = self._hdm.get_driver(ri)
+                driver.router_removed(ri, deconfigure)
+                self._hdm.remove_driver(router_id)
+            del self.router_info[router_id]
+        except DriverException:
+            LOG.info(_("Router remove for router_id: %s was incomplete. "
+                       "Adding the router to removed_routers list"), router_id)
+            self.removed_routers.add(router_id)
+            # remove this router from updated_routers if it is there. It might
+            # end up there too if exception was thrown inside `process_router`
+            self.updated_routers.discard(router_id)
 
     def _set_subnet_info(self, port):
         ips = port['fixed_ips']
@@ -225,6 +234,7 @@ class CiscoCfgAgent(manager.Manager):
             self.routes_updated(ri)
         except DriverException as e:
             LOG.error(e)
+            raise e
 
     def process_router_floating_ips(self, ri, ex_gw_port):
         try:
@@ -353,7 +363,7 @@ class CiscoCfgAgent(manager.Manager):
             return
 
         target_ex_net_id = self._fetch_external_net_id()
-        # if routers are all the routers we have (They are from router sync on
+        # if routers are all the routers we have (they are from router sync on
         # starting or when error occurs during running), we seek the
         # routers which should be removed.
         # If routers are from server side notification, we seek them
@@ -367,8 +377,8 @@ class CiscoCfgAgent(manager.Manager):
         for r in routers:
             if not r['admin_state_up']:
                 continue
-            # Note: Whether the router is assigned to a dedicated hosting
-            # device is decided and enforced by the plugin.
+                # Note: Whether the router can only be assigned to a particular
+            # hosting device is decided and enforced by the plugin.
             # So no checks are done here.
             ex_net_id = (r['external_gateway_info'] or {}).get('network_id')
             if (target_ex_net_id and ex_net_id and
@@ -387,7 +397,7 @@ class CiscoCfgAgent(manager.Manager):
         # identify and remove routers that no longer exist
         for router_id in prev_router_ids - cur_router_ids:
             pool.spawn_n(self._router_removed, router_id)
-            pool.waitall()
+        pool.waitall()
 
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def _rpc_loop(self):
@@ -404,7 +414,8 @@ class CiscoCfgAgent(manager.Manager):
                 routers = self.plugin_rpc.get_routers(
                     self.context, router_ids)
                 self._process_routers(routers)
-            self._process_router_delete()
+            if self.removed_routers:
+                self._process_router_delete()
             LOG.debug(_("RPC loop successfully completed"))
         except Exception:
             LOG.exception(_("Failed synchronizing routers"))
@@ -421,22 +432,21 @@ class CiscoCfgAgent(manager.Manager):
     def _sync_routers_task(self, context):
         LOG.debug(_("Starting _sync_routers_task - fullsync:%s"),
                   self.fullsync)
-        if not self.fullsync:
-            return
-        try:
-            router_ids = None
-            self.updated_routers.clear()
-            self.removed_routers.clear()
-            routers = self.plugin_rpc.get_routers(
-                context, router_ids)
-
-            LOG.debug(_('Processing :%r'), routers)
-            self._process_routers(routers, all_routers=True)
-            self.fullsync = False
-            LOG.debug(_("_sync_routers_task successfully completed"))
-        except Exception:
-            LOG.exception(_("Failed synchronizing routers"))
-            self.fullsync = True
+        if self.fullsync:
+            try:
+                LOG.debug(_("Starting a full sync"))
+                router_ids = None
+                self.updated_routers.clear()
+                self.removed_routers.clear()
+                routers = self.plugin_rpc.get_routers(
+                    context, router_ids)
+                LOG.debug(_('Processing :%r'), routers)
+                self._process_routers(routers, all_routers=True)
+                self.fullsync = False
+                LOG.debug(_("_sync_routers_task successfully completed"))
+            except Exception:
+                LOG.exception(_("Failed synchronizing routers"))
+                self.fullsync = True
         else:
             LOG.debug(_("Full sync is False. Processing backlog."))
             res = self._hdm.check_backlogged_hosting_devices()
@@ -450,7 +460,7 @@ class CiscoCfgAgent(manager.Manager):
             if res['dead']:
                 LOG.debug(_("Reporting dead hosting devices: %s"),
                           res['dead'])
-                # Process dead Hosting Device
+                # Process dead hosting device
                 self.plugin_rpc.report_dead_hosting_devices(
                     context, hd_ids=res['dead'])
 
@@ -516,10 +526,10 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             ex_gw_port = self._get_ex_gw_port(ri)
             if ex_gw_port:
                 num_ex_gw_ports += 1
-            num_interfaces += len(ri.router.get(l3_constants.INTERFACE_KEY,
-                                                []))
-            num_floating_ips += len(ri.router.get(l3_constants.FLOATINGIP_KEY,
-                                                  []))
+            num_interfaces += len(ri.router.get(
+                l3_constants.INTERFACE_KEY, []))
+            num_floating_ips += len(ri.router.get(
+                l3_constants.FLOATINGIP_KEY, []))
             hd = ri.router['hosting_device']
             if hd:
                 num_hd_routers[hd['id']] = num_hd_routers.get(hd['id'], 0) + 1
@@ -549,9 +559,18 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             LOG.exception(_("Failed reporting state!"))
 
     def agent_updated(self, context, payload):
-        """Handle the agent_updated notification event."""
-        self.fullsync = True
-        LOG.info(_("agent_updated by server side %s!"), payload)
+        """Handle the agent_updated notification event.
+        Plugin sets the `admin_status_up` flag. If `admin-status-up` is set,
+        we set full_sync. Expected payload format is:
+          {'admin_state_up': admin_state_up}
+        """
+        LOG.debug(_("Agent_updated by plugin.Payload is  %s!"), payload)
+        admin_status_up = payload.get('admin_state_up', None)
+        if admin_status_up is not None:
+            if admin_status_up and not self.admin_status_up:
+                LOG.info(_("Admin status up is now True. Setting full sync"))
+                self.fullsync = True
+            self.admin_status_up = admin_status_up
 
 
 def main(manager='neutron.plugins.cisco.l3.agent.'
