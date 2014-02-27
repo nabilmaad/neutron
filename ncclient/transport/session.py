@@ -40,6 +40,7 @@ class Session(Thread):
         self._connected = False # to be set/cleared by subclass implementation
         logger.debug('%r created: client_capabilities=%r' %
                      (self, self._client_capabilities))
+        self._device_handler = None # Should be set by child class
 
     def _dispatch_message(self, raw):
         try:
@@ -50,17 +51,17 @@ class Session(Thread):
         with self._lock:
             listeners = list(self._listeners)
         for l in listeners:
-	    #Hareesh -comment out debug message
-	    #logger.debug('dispatching message to %r: %s' % (l, raw))
+            logger.debug("No of listeners: %d", len(self._listeners) )
+            logger.debug('dispatching message to %r: %s' % (l, raw))
             l.callback(root, raw) # no try-except; fail loudly if you must!
-    
+
     def _dispatch_error(self, err):
         with self._lock:
             listeners = list(self._listeners)
         for l in listeners:
             logger.debug('dispatching error to %r' % l)
             try: # here we can be more considerate with catching exceptions
-                l.errback(err) 
+                l.errback(err)
             except Exception as e:
                 logger.warning('error dispatching to %r: %r' % (l, e))
 
@@ -78,7 +79,7 @@ class Session(Thread):
             init_event.set()
         listener = HelloHandler(ok_cb, err_cb)
         self.add_listener(listener)
-        self.send(HelloHandler.build(self._client_capabilities))
+        self.send(HelloHandler.build(self._client_capabilities, self._device_handler))
         logger.debug('starting main loop')
         self.start()
         # we expect server's hello message
@@ -207,9 +208,13 @@ class HelloHandler(SessionListener):
         self._error_cb(err)
 
     @staticmethod
-    def build(capabilities):
+    def build(capabilities, device_handler):
         "Given a list of capability URI's returns <hello> message XML string"
-        hello = new_ele("hello")
+        if device_handler:
+            xml_namespace_kwargs = device_handler.get_xml_base_namespace_dict()
+        else:
+            xml_namespace_kwargs = {}
+        hello = new_ele("hello", **xml_namespace_kwargs)
         caps = sub_ele(hello, "capabilities")
         def fun(uri): sub_ele(caps, "capability").text = uri
         map(fun, capabilities)

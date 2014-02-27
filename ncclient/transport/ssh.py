@@ -19,6 +19,8 @@ from binascii import hexlify
 from cStringIO import StringIO
 from select import select
 
+from ncclient.capabilities import Capabilities
+
 import paramiko
 
 from errors import AuthenticationError, SessionCloseError, SSHError, SSHUnknownHostError
@@ -35,23 +37,14 @@ def default_unknown_host_cb(host, fingerprint):
     """An unknown host callback returns `True` if it finds the key acceptable, and `False` if not.
 
     This default callback always returns `False`, which would lead to :meth:`connect` raising a :exc:`SSHUnknownHost` exception.
-    
+
     Supply another valid callback if you need to verify the host key programatically.
 
     *host* is the hostname that needs to be verified
 
     *fingerprint* is a hex string representing the host key fingerprint, colon-delimited e.g. `"4b:69:6c:72:6f:79:20:77:61:73:20:68:65:72:65:21"`
     """
-    #Hareesh
-    #return True
-    print "Host:%s, Fingerprint:%s" % (host, fingerprint)
-    #if host == 'localhost' or '127.0.0.1' and fingerprint == 'ad:bf:46:e4:36:23:da:9b:e8:f6:c6:b9:2e:fe:9c:bc':
-    #    print "Match found"
-    #    return True
-    #else:
-    #    return False
-    print "Ignoring fingerprint check"
-    return True		
+    return False
 
 def _colonify(fp):
     finga = fp[:2]
@@ -63,7 +56,8 @@ class SSHSession(Session):
 
     "Implements a :rfc:`4742` NETCONF session over SSH."
 
-    def __init__(self, capabilities):
+    def __init__(self, device_handler):
+        capabilities = Capabilities(device_handler.get_capabilities())
         Session.__init__(self, capabilities)
         self._host_keys = paramiko.HostKeys()
         self._transport = None
@@ -73,7 +67,8 @@ class SSHSession(Session):
         # parsing-related, see _parse()
         self._parsing_state = 0
         self._parsing_pos = 0
-    
+        self._device_handler = device_handler
+
     def _parse(self):
         "Messages ae delimited by MSG_DELIM. The buffer could have grown by a maximum of BUF_SIZE bytes everytime this method is called. Retains state across method calls and if a byte has been read it will not be considered again."
         delim = MSG_DELIM
@@ -166,7 +161,7 @@ class SSHSession(Session):
         """
         if username is None:
             username = getpass.getuser()
-        
+
         sock = None
         for res in socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM):
             af, socktype, proto, canonname, sa = res
@@ -212,12 +207,23 @@ class SSHSession(Session):
 
         self._connected = True # there was no error authenticating
 
-        c = self._channel = self._transport.open_session()
-        c.set_name("netconf")
-        c.invoke_subsystem("netconf")
+        subsystem_names = self._device_handler.get_ssh_subsystem_names()
+        for subname in subsystem_names:
+            c = self._channel = self._transport.open_session()
+            try:
+                # Try the subsystem names in order. Connect and use the first one that
+                # is accepted.
+                c.set_name(subname)
+                c.invoke_subsystem(subname)
+                self._post_connect()
+                return
+            except paramiko.SSHException as e:
+                # Ignore the exception, since we continue to try the different
+                # subsystem names until we find one that can connect.
+                pass
+        raise SSHError("Could not open connection, possibly due to unacceptable"
+                       " SSH subsystem name.")
 
-        self._post_connect()
-    
     # on the lines of paramiko.SSHClient._auth()
     def _auth(self, username, password, key_filenames, allow_agent,
               look_for_keys):

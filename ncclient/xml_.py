@@ -28,8 +28,11 @@ class XMLError(NCClientError): pass
 ### Namespace-related
 
 #: Base NETCONF namespace
-#BASE_NS_1_0 = "urn:ietf:params:netconf:base:1.0"
 BASE_NS_1_0 = "urn:ietf:params:xml:ns:netconf:base:1.0"
+# NXOS_1_0
+NXOS_1_0 = "http://www.cisco.com/nxos:1.0"
+# NXOS_IF
+NXOS_IF = "http://www.cisco.com/nxos:1.0:if_manager"
 #: Namespace for Tail-f core data model
 TAILF_AAA_1_1 = "http://tail-f.com/ns/aaa/1.1"
 #: Namespace for Tail-f execd data model
@@ -52,12 +55,14 @@ register_namespace.func_doc = "ElementTree's namespace map determines the prefix
 
 for (ns, pre) in {
     BASE_NS_1_0: 'nc',
+    NXOS_1_0: 'nxos',
+    NXOS_IF: 'if',
     TAILF_AAA_1_1: 'aaa',
     TAILF_EXECD_1_1: 'execd',
     CISCO_CPI_1_0: 'cpi',
     FLOWMON_1_0: 'fm',
     JUNIPER_1_1: 'junos',
-}.items(): 
+}.items():
     register_namespace(pre, ns)
 
 qualify = lambda tag, ns=BASE_NS_1_0: tag if ns is None else "{%s}%s" % (ns, tag)
@@ -80,7 +85,7 @@ def parse_root(raw):
 
 def validated_element(x, tags=None, attrs=None):
     """Checks if the root element of an XML document or Element meets the supplied criteria.
-    
+
     *tags* if specified is either a single allowable tag name or sequence of allowable alternatives
 
     *attrs* if specified is a sequence of required attributes, each of which may be a sequence of several allowable alternatives
@@ -105,5 +110,5 @@ def validated_element(x, tags=None, attrs=None):
 
 new_ele = lambda tag, attrs={}, **extra: ET.Element(qualify(tag), attrs, **extra)
 
-sub_ele = lambda parent, tag, attrs={}, **extra: ET.SubElement(parent, qualify(tag), attrs, **extra)
+sub_ele = lambda parent, tag, attrs={}, **extra: ET.SubElement(parent, qualify(tag, ns=None), attrs, **extra)
 
