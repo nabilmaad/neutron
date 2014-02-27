@@ -963,14 +963,14 @@ def create_profile_binding(tenant_id, profile_id, profile_type):
 
 def _profile_binding_exists(tenant_id, profile_id, profile_type):
     db_session = db.get_session()
-    LOG.debug(_("_profile_binding_exists()"))
+#    LOG.debug(_("_profile_binding_exists()"))
     return (db_session.query(n1kv_models_v2.ProfileBinding).
             filter_by(tenant_id=tenant_id, profile_id=profile_id,
                       profile_type=profile_type).first())
 
 
 def _get_profile_binding(tenant_id, profile_id):
-    LOG.debug(_("_get_profile_binding"))
+#    LOG.debug(_("_get_profile_binding"))
     db_session = db.get_session()
     return (db_session.query(n1kv_models_v2.ProfileBinding).filter_by(
         tenant_id=tenant_id, profile_id=profile_id).one())
@@ -978,7 +978,7 @@ def _get_profile_binding(tenant_id, profile_id):
 
 def get_profile_binding(tenant_id, profile_id):
     """Get Network/Policy Profile - Tenant binding."""
-    LOG.debug(_("get_profile_binding()"))
+#    LOG.debug(_("get_profile_binding()"))
     try:
         return _get_profile_binding(tenant_id, profile_id)
     except exc.NoResultFound:
