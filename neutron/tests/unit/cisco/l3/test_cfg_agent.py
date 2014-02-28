@@ -69,11 +69,10 @@ class TestBasicRouterOperations(base.BaseTestCase):
             'neutron.plugins.cisco.l3.agent.cfg_agent.CiscoL3PluginApi')
         l3pluginApi_cls = self.l3pluginApi_cls_p.start()
         self.plugin_api = mock.Mock()
-        # Setting return value of get_routers() rpc call to an empty list
-        # incase an _rpc_loop is executed with values in updated_router(Side
-        # effect of an DriverException thrown)
-        self.plugin_api.get_routers.return_value = []
         l3pluginApi_cls.return_value = self.plugin_api
+        self.looping_call_p = mock.patch(
+            'neutron.openstack.common.loopingcall.FixedIntervalLoopingCall')
+        self.looping_call_p.start()
 
         self.addCleanup(mock.patch.stopall)
 
