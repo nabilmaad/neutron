@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -39,7 +37,6 @@ class TestHostingDevice(base.BaseTestCase):
 
     def setUp(self):
         super(TestHostingDevice, self).setUp()
-        #ToDo : Is this needed? self.conf.register_opts(base_config.core_opts)
         self.hdm = HostingDevicesManager()
         self.hdm._is_pingable = mock.MagicMock()
         self.hdm._is_pingable.return_value = True
@@ -83,7 +80,7 @@ class TestHostingDevice(base.BaseTestCase):
 
         self.assertFalse(self.hdm._is_pingable('1.2.3.4'))
         self.assertEqual(self.hdm.is_hosting_device_reachable(
-            self.router_id, self.router), False)
+            self.router_id, self.router), None)
         self.assertEqual(len(self.hdm.backlog_hosting_devices), 1)
         self.assertTrue(123 in self.hdm.backlog_hosting_devices.keys())
         self.assertEqual(self.hdm.backlog_hosting_devices[123]['routers'],
@@ -96,7 +93,7 @@ class TestHostingDevice(base.BaseTestCase):
 
         self.assertEqual(len(self.hdm.backlog_hosting_devices), 1)
         self.assertEqual(self.hdm.is_hosting_device_reachable(
-            self.router_id, self.router), False)
+            self.router_id, self.router), None)
         self.assertEqual(len(self.hdm.backlog_hosting_devices), 1)
         self.assertTrue(123 in self.hdm.backlog_hosting_devices.keys())
         self.assertEqual(len(

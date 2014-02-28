@@ -1,5 +1,3 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
 # Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -42,7 +40,8 @@ class TestCSR1000vRouting(base.BaseTestCase):
     def setUp(self):
         super(TestCSR1000vRouting, self).setUp()
 
-        self.driver = CSR1000vRoutingDriver(None, None, None, None)
+        device_params = {'ip_address': 'fake_ip', 'port': 22}
+        self.driver = CSR1000vRoutingDriver(**device_params)
         self.mock_conn = mock.MagicMock()
         self.driver._csr_conn = self.mock_conn
         self.driver._check_response = mock.MagicMock(return_value=True)

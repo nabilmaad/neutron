@@ -116,9 +116,9 @@ class HostingDevicesManager(object):
                     (_hd_type, _service_type, _config_protocol)]
             except KeyError:
                 LOG.exception(_("Cannot find driver class for "
-                                "device type: %(device_type)s, service_type:"
+                                "device type:%(device_type)s, service_type:"
                                 "%(service_type)s and config_protocol:"
-                                "%(config_protocol)s "),
+                                "%(config_protocol)s"),
                               {'device_type': _hd_type,
                                'service_type': _service_type,
                                'config_protocol': _config_protocol})
@@ -127,8 +127,7 @@ class HostingDevicesManager(object):
             try:
                 _driver = importutils.import_object(
                     driver_class,
-                    _hd_ip, _hd_port, _hd_user, _hd_passwd)
-                # _driver = None
+                    **hosting_device)
             except ImportError:
                 LOG.exception(_("Error loading hosting device driver "
                                 "%(driver)s for host type %(host_type)s"),
@@ -178,24 +177,22 @@ class HostingDevicesManager(object):
                           {'hd_id': hd_id, 'ip': hd['ip_address'],
                            'id': router_id})
                 return True
-            else:
-                LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s for router: "
-                            "%(id)s is NOT reachable."),
-                          {'hd_id': hd_id, 'ip': hd['ip_address'],
-                           'id': router_id, })
-                hd['backlog_insertion_ts'] = max(
-                    timeutils.utcnow(),
-                    hd['created_at'] +
-                    datetime.timedelta(seconds=hd['booting_time']))
-                self.backlog_hosting_devices[hd_id] = {'hd': hd,
-                                                       'routers': [router_id]}
-                self.clear_driver_connection(hd_id)
-                LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s is now added "
-                            "to backlog"), {'hd_id': hd_id,
-                                            'ip': hd['ip_address']})
+            LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s for router: "
+                        "%(id)s is NOT reachable."),
+                      {'hd_id': hd_id, 'ip': hd['ip_address'],
+                       'id': router_id, })
+            hd['backlog_insertion_ts'] = max(
+                timeutils.utcnow(),
+                hd['created_at'] +
+                datetime.timedelta(seconds=hd['booting_time']))
+            self.backlog_hosting_devices[hd_id] = {'hd': hd,
+                                                   'routers': [router_id]}
+            self.clear_driver_connection(hd_id)
+            LOG.debug(_("Hosting device: %(hd_id)s @ %(ip)s is now added "
+                        "to backlog"), {'hd_id': hd_id,
+                                        'ip': hd['ip_address']})
         else:
             self.backlog_hosting_devices[hd_id]['routers'].append(router_id)
-        return False
 
     def check_backlogged_hosting_devices(self):
         """"Checks the status of backlogged hosting devices.
@@ -246,8 +243,7 @@ class HostingDevicesManager(object):
         r = self._send_ping(mgmt_ip)
         if r:
             return False
-        else:
-            return True
+        return True
 
     def _send_ping(self, ip):
         ping_cmd = ['ping',

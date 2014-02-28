@@ -21,13 +21,21 @@ from neutron.common import exceptions
 
 class DriverException(exceptions.NeutronException):
     """
-    Exception created by the Driver class
+    Exception created by the Driver class.
     """
+
+
+class CSR1000vInitializationException(DriverException):
+    """
+    Exception when initialization of CSR1000v Routing Driver object.
+    """
+    message = (_("Critical device parameter missing. Failed initializing "
+                 "CSR1000vRoutingDriver"))
 
 
 class CSR1000vConnectionException(DriverException):
     """
-    Exception created by the CSR1000v Routing Driver class
+    Exception created by the CSR1000v Routing Driver class.
     """
     message = (_("Failed connecting to CSR1000v. Reason: %(reason)s. "
                "Connection Params are Host:%(host)s, "
@@ -37,7 +45,7 @@ class CSR1000vConnectionException(DriverException):
 
 class CSR1000vConfigException(DriverException):
     """
-    Configuration exception thrown when modifying the running config
+    Configuration exception thrown when modifying the running config.
     """
     message = (_("Error executing snippet:%(snippet)s. "
                  "ErrorType:%(type)s ErrorTag:%(tag)s"))

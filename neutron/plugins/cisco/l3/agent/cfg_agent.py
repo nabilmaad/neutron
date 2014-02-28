@@ -46,8 +46,6 @@ from neutron import service as neutron_service
 
 LOG = logging.getLogger(__name__)
 
-RPC_LOOP_INTERVAL = 1
-
 
 class CiscoL3PluginApi(proxy.RpcProxy):
     """Agent side of the agent RPC API."""
@@ -118,6 +116,15 @@ class CiscoCfgAgent(manager.Manager):
         cfg.StrOpt('gateway_external_network_id', default='',
                    help=_("UUID of external network for routers configured "
                           "by agents.")),
+        cfg.IntOpt('sync_routers_task_interval', default=60,
+                   help=_("Interval between the execution of the "
+                          "sync_routers_task. We check for full sync or "
+                          "process backlogged hosting devices here. Overrides "
+                          "openstack periodic scheduler's default")),
+        cfg.StrOpt('rpc_loop_interval', default=3,
+                   help=_("Interval when the rpc loop executes. This is when "
+                          "agent fetches info about the updated or removed "
+                          "routers notifyed from a plugin side RPC.")),
     ]
 
     def __init__(self, host, conf=None):
@@ -136,7 +143,7 @@ class CiscoCfgAgent(manager.Manager):
         self._hdm = HostingDevicesManager()
         self.rpc_loop = loopingcall.FixedIntervalLoopingCall(
             self._rpc_loop)
-        self.rpc_loop.start(interval=RPC_LOOP_INTERVAL)
+        self.rpc_loop.start(interval=self.conf.rpc_loop_interval)
         super(CiscoCfgAgent, self).__init__(host=self.conf.host)
 
     def _fetch_external_net_id(self):
@@ -148,7 +155,6 @@ class CiscoCfgAgent(manager.Manager):
         # and the cfg agent is able to handle any external networks.
         if not self.conf.external_network_bridge:
             return
-
         try:
             return self.plugin_rpc.get_external_network_id(self.context)
         except rpc_common.RemoteError as e:
@@ -161,7 +167,7 @@ class CiscoCfgAgent(manager.Manager):
                     raise Exception(msg)
 
     def _router_added(self, router_id, router):
-        """Operations when a router is added
+        """Operations when a router is added.
 
         We create a new RouterInfo object for this router and add it to the
         agent's router_info dictionary. We call router_added on the driver.
@@ -176,7 +182,7 @@ class CiscoCfgAgent(manager.Manager):
         self.router_info[router_id] = ri
 
     def _router_removed(self, router_id, deconfigure=True):
-        """Operations when a router is removed
+        """Operations when a router is removed.
 
         We get a RouterInfo object corresponding to the router in the agent's
         router_info dict. If deconfigure is set to True, we remove the router's
@@ -223,7 +229,7 @@ class CiscoCfgAgent(manager.Manager):
         return ri.router.get('gw_port')
 
     def process_router(self, ri):
-        """Process a router, apply latest configuration, update router_info
+        """Process a router, apply latest configuration and update router_info.
 
         We get the router dict from  router_info and compare to detect changes
         from the last known state. We detect new ports or deleted ports and
@@ -234,9 +240,9 @@ class CiscoCfgAgent(manager.Manager):
         We set the current state in ri.internal_ports and ri.ex_gw_port for
         future comparisons.
 
-        :param ri: neutron.plugins.cisco.l3.agent.router_info.RouterInfo
+        :param ri : neutron.plugins.cisco.l3.agent.router_info.RouterInfo
         corresponding to the router being processed.
-        :return: None
+        :return None
         :raises neutron.plugins.cisco.l3.common.exceptions.DriverException if
         the configuration operation fails.
         """
@@ -278,50 +284,62 @@ class CiscoCfgAgent(manager.Manager):
             raise e
 
     def process_router_floating_ips(self, ri, ex_gw_port):
-        try:
-            floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
-            existing_floating_ip_ids = set(
-                [fip['id'] for fip in ri.floating_ips])
-            cur_floating_ip_ids = set([fip['id'] for fip in floating_ips])
+        """Process a router's floating ips.
 
-            id_to_fip_map = {}
+        Compare the current floatingips (in ri.floating_ips) with the
+        updated routers floating ips (ri.router.floating_ips) and detect
+        flaoting_ips which were added or removed and notify the driver of the
+        change via `floating_ip_added()` or `floating_ip_removed()`.
 
-            for fip in floating_ips:
-                if fip['port_id']:
-                    if fip['id'] not in existing_floating_ip_ids:
-                        ri.floating_ips.append(fip)
-                        self.floating_ip_added(ri, ex_gw_port,
-                                               fip['floating_ip_address'],
-                                               fip['fixed_ip_address'])
+        :param ri:  neutron.plugins.cisco.l3.agent.router_info.RouterInfo
+        corresponding to the router being processed.
+        :param ex_gw_port: Port dict of the external gateway port.
+        :return: None
+        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
+        the configuration operation fails.
+        """
 
-                    # store to see if floatingip was remapped
-                    id_to_fip_map[fip['id']] = fip
+        floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
+        existing_floating_ip_ids = set(
+            [fip['id'] for fip in ri.floating_ips])
+        cur_floating_ip_ids = set([fip['id'] for fip in floating_ips])
 
-            floating_ip_ids_to_remove = (existing_floating_ip_ids -
-                                         cur_floating_ip_ids)
-            for fip in ri.floating_ips:
-                if fip['id'] in floating_ip_ids_to_remove:
-                    ri.floating_ips.remove(fip)
+        id_to_fip_map = {}
+
+        for fip in floating_ips:
+            if fip['port_id']:
+                if fip['id'] not in existing_floating_ip_ids:
+                    ri.floating_ips.append(fip)
+                    self.floating_ip_added(ri, ex_gw_port,
+                                           fip['floating_ip_address'],
+                                           fip['fixed_ip_address'])
+
+                # store to see if floatingip was remapped
+                id_to_fip_map[fip['id']] = fip
+
+        floating_ip_ids_to_remove = (existing_floating_ip_ids -
+                                     cur_floating_ip_ids)
+        for fip in ri.floating_ips:
+            if fip['id'] in floating_ip_ids_to_remove:
+                ri.floating_ips.remove(fip)
+                self.floating_ip_removed(ri, ri.ex_gw_port,
+                                         fip['floating_ip_address'],
+                                         fip['fixed_ip_address'])
+            else:
+                # handle remapping of a floating IP
+                new_fip = id_to_fip_map[fip['id']]
+                new_fixed_ip = new_fip['fixed_ip_address']
+                existing_fixed_ip = fip['fixed_ip_address']
+                if (new_fixed_ip and existing_fixed_ip and
+                        new_fixed_ip != existing_fixed_ip):
+                    floating_ip = fip['floating_ip_address']
                     self.floating_ip_removed(ri, ri.ex_gw_port,
-                                             fip['floating_ip_address'],
-                                             fip['fixed_ip_address'])
-                else:
-                    # handle remapping of a floating IP
-                    new_fip = id_to_fip_map[fip['id']]
-                    new_fixed_ip = new_fip['fixed_ip_address']
-                    existing_fixed_ip = fip['fixed_ip_address']
-                    if (new_fixed_ip and existing_fixed_ip and
-                            new_fixed_ip != existing_fixed_ip):
-                        floating_ip = fip['floating_ip_address']
-                        self.floating_ip_removed(ri, ri.ex_gw_port,
-                                                 floating_ip,
-                                                 existing_fixed_ip)
-                        self.floating_ip_added(ri, ri.ex_gw_port,
-                                               floating_ip, new_fixed_ip)
-                        ri.floating_ips.remove(fip)
-                        ri.floating_ips.append(new_fip)
-        except DriverException as e:
-            LOG.error(e)
+                                             floating_ip,
+                                             existing_fixed_ip)
+                    self.floating_ip_added(ri, ri.ex_gw_port,
+                                           floating_ip, new_fixed_ip)
+                    ri.floating_ips.remove(fip)
+                    ri.floating_ips.append(new_fip)
 
     def external_gateway_added(self, ri, ex_gw_port):
         driver = self._hdm.get_driver(ri)
@@ -396,7 +414,7 @@ class CiscoCfgAgent(manager.Manager):
         self.routers_updated(context, payload)
 
     def _process_routers(self, routers, all_routers=False):
-        """Process the set of routers
+        """Process the set of routers.
 
         Iterating on the set of routers  received and comparing it with the
         set of routers already in the agent, new routers which are added are
@@ -457,7 +475,7 @@ class CiscoCfgAgent(manager.Manager):
 
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def _rpc_loop(self):
-        """Process routers received via RPC
+        """Process routers received via RPC.
 
         This method  executes every `RPC_LOOP_INTERVAL` seconds and processes
         routers which have been notified via RPC from the plugin. Plugin sends
@@ -498,7 +516,7 @@ class CiscoCfgAgent(manager.Manager):
             self.removed_routers.remove(router_id)
 
     def _process_backlogged_hosting_devices(self, context):
-        """Process currently back logged devices
+        """Process currently back logged devices.
 
         We go through the currently backlogged devices and process them.
         For devices which are now reachable (compared to last time), we fetch
@@ -523,19 +541,18 @@ class CiscoCfgAgent(manager.Manager):
             self.plugin_rpc.report_dead_hosting_devices(
                 context, hd_ids=res['dead'])
 
-    @periodic_task.periodic_task
+    @periodic_task.periodic_task(spacing=cfg.CONF.sync_routers_task_interval)
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def _sync_routers_task(self, context):
-        """Synchronize routers
+        """Synchronize routers on this agent.
 
-        Synchronizes routers with period of `DEFAULT_INTERVAL` of the
-        periodic_scheduler (default=60).When this method executes and
-        `full_sync` flag is True, this method fetches all the routers
-        from the plugin and process them. This can cause routers to be
-        added/modified/deleted from the hosting device.
+        Synchronizes routers with period of `sync_routers_task_interval`
+        When this method executes and `full_sync` flag is True, this method
+        fetches all the routers from the plugin and process them. This can
+        cause routers to be added/modified/deleted from the hosting device.
         When `full_sync` is False, we process all the backlogged hosting
         devices.
-        :param context:
+        :param context: RPC_context
         :return: None
         """
         LOG.debug(_("Starting _sync_routers_task - fullsync:%s"),
@@ -563,7 +580,7 @@ class CiscoCfgAgent(manager.Manager):
         LOG.info(_("Cisco cfg agent started"))
 
     def routes_updated(self, ri):
-        """Update the state of routes in the router
+        """Update the state of routes in the router.
 
          We compare the current routes with the existing routes configured
          and detect what was removed or added and configure the router in the
@@ -619,6 +636,16 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
             self.heartbeat.start(interval=report_interval)
 
     def _report_state(self):
+        """Report state back to the plugin.
+
+        This is run every `report_interval` period. This attribute is part
+        of the agent's configuration.
+        Collects, creates and sends a RPC notification with a summary of
+        logical routers, hosting devices and other attributes which together
+        represent a snapshot of what this agent is managing.
+        Look at the `configurations` dict for the parameters reported.
+        :return: None
+        """
         LOG.debug(_("Report state task started"))
         num_ex_gw_ports = 0
         num_interfaces = 0
@@ -665,9 +692,11 @@ class CiscoCfgAgentWithStateReport(CiscoCfgAgent):
 
     def agent_updated(self, context, payload):
         """Handle the agent_updated notification event.
+
         Plugin sets the `admin_status_up` flag. If `admin-status-up` is set,
-        we set full_sync. Expected payload format is:
-          {'admin_state_up': admin_state_up}
+        we set full_sync which will cause a full refresh for routers belonging
+        to this agent.
+        Payload format : {'admin_state_up': admin_state_up}
         """
         LOG.debug(_("Agent_updated by plugin.Payload is  %s!"), payload)
         admin_status_up = payload.get('admin_state_up', None)

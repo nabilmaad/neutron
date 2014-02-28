@@ -28,9 +28,8 @@ from oslo.config import cfg
 
 from neutron.plugins.cisco.l3.agent.services_api import RoutingDriverBase
 from neutron.plugins.cisco.l3.common.exceptions import (
-    CSR1000vConfigException)
-from neutron.plugins.cisco.l3.common.exceptions import (
-    CSR1000vConnectionException)
+    CSR1000vConfigException, CSR1000vConnectionException,
+    CSR1000vInitializationException)
 from neutron.plugins.cisco.l3.common import n1kv_constants as n1kv_constants
 
 
@@ -38,18 +37,25 @@ LOG = logging.getLogger(__name__)
 
 
 class CSR1000vRoutingDriver(RoutingDriverBase):
-    """CSR1000v Routing Driver"""
+    """CSR1000v Routing Driver."""
 
     DEV_NAME_LEN = 14
 
-    def __init__(self, csr_host, csr_ssh_port, csr_user, csr_password):
-        self._csr_host = csr_host
-        self._csr_ssh_port = csr_ssh_port
-        self._csr_user = csr_user
-        self._csr_password = csr_password
-        self._timeout = cfg.CONF.device_connection_timeout
-        self._csr_conn = None
-        self._intfs_enabled = False
+    def __init__(self, **device_params):
+        try:
+            self._csr_host = device_params['ip_address']
+            self._csr_ssh_port = device_params['port']
+            # Using defaults for user/password if absent
+            self._csr_user = device_params.get('user', 'stack')
+            self._csr_password = device_params.get('password', 'cisco')
+            self._timeout = cfg.CONF.device_connection_timeout
+            self._csr_conn = None
+            self._intfs_enabled = False
+        except KeyError as e:
+            LOG.error(_("Missing device parameter:%s. Aborting "
+                        "CSR1000vRoutingDriver initialization"), e)
+            raise CSR1000vInitializationException
+
 
     ###### Public Functions ########
 
@@ -233,8 +239,14 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         return ri.router_name()[:self.DEV_NAME_LEN]
 
     def _get_connection(self):
-        """Make SSH connection to the CSR
-            The external ncclient library is used for creating this connection
+        """Make SSH connection to the CSR.
+
+        The external ncclient library is used for creating this connection.
+        This method keeps state of any existing connections and reuses them if
+        we are already connected. Also CSR1000v's interfaces (except
+        management are disabled by default when it is booted. So if connecting
+        for the first time, driver will enable all other interfaces and keep
+        that status in the `_intfs_enabled` flag.
         """
         try:
             if self._csr_conn and self._csr_conn.connected:
@@ -246,7 +258,6 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
                                                  password=self._csr_password,
                                                  device_params={'name': "csr"},
                                                  timeout=self._timeout)
-                #self._csr_conn.async_mode = True
                 if not self._intfs_enabled:
                     self._intfs_enabled = self._enable_intfs(self._csr_conn)
             return self._csr_conn
@@ -279,26 +290,20 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         return no
 
     def _get_interfaces(self):
-        """
+        """Get a list of interfaces on this hosting device.
         :return: List of the interfaces
         """
         ioscfg = self._get_running_config()
         parse = CiscoConfParse(ioscfg)
         intfs_raw = parse.find_lines("^interface GigabitEthernet")
-        #['interface GigabitEthernet1', 'interface GigabitEthernet2',
-        #  'interface GigabitEthernet0']
-        intfs = []
-        for line in intfs_raw:
-            intf = line.strip().split(' ')[1]
-            intfs.append(intf)
+        intfs = [l.strip().split(' ')[1] for l in intfs_raw]
         LOG.info("Interfaces:%s" % intfs)
         return intfs
 
     def _get_interface_ip(self, interface_name):
-        """
-        Get the ip address for an interface
-        :param interface_name:
-        :return: ip address as a string
+        """Get the ip address for an interface.
+        :param interface_name: interface_name as a string
+        :return: ip address of interface as a string
         """
         ioscfg = self._get_running_config()
         parse = CiscoConfParse(ioscfg)
@@ -308,11 +313,11 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
                 ip_address = line.strip().split(' ')[2]
                 LOG.info("IP Address:%s" % ip_address)
                 return ip_address
-            else:
-                LOG.warn("Cannot find interface:" % interface_name)
-                return None
+        LOG.warn("Cannot find interface:" % interface_name)
+        return None
 
     def _interface_exists(self, interface):
+        """Check whether interface exists. """
         ioscfg = self._get_running_config()
         parse = CiscoConfParse(ioscfg)
         intfs_raw = parse.find_lines("^interface " + interface)
@@ -324,9 +329,8 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
     def _enable_intfs(self, conn):
         # CSR1kv, in release 3.11 GigabitEthernet 0 is no longer present.
         # so GigabitEthernet 1 is used as management and 2 up
-        # is used for data.
+        # is used for data. Note that this might change in a different release.
         interfaces = ['GigabitEthernet 2', 'GigabitEthernet 3']
-        #interfaces = ['GigabitEthernet 1']
         try:
             for i in interfaces:
                 confstr = snippets.ENABLE_INTF % i
@@ -354,6 +358,7 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         return vrfs
 
     def _get_capabilities(self):
+        """Get the servers NETCONF capabilities."""
         conn = self._get_connection()
         capabilities = []
         for c in conn.server_capabilities:
@@ -362,6 +367,9 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         return capabilities
 
     def _get_running_config(self):
+        """Get the CSR's current running config.
+        :return: Current IOS running config
+        """
         conn = self._get_connection()
         config = conn.get_config(source="running")
         if config:
@@ -373,6 +381,13 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
             return ioscfg
 
     def _check_acl(self, acl_no, network, netmask):
+        """Check a ACL config exists in the running config.
+
+        :param acl_no: access control list (ACL) number
+        :param network: network which this ACL permits
+        :param netmask: netmask of the network
+        :return:
+        """
         exp_cfg_lines = ['ip access-list standard ' + str(acl_no),
                          ' permit ' + str(network) + ' ' + str(netmask)]
         ioscfg = self._get_running_config()
@@ -381,22 +396,20 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         if acls_raw:
             if exp_cfg_lines[1] in acls_raw:
                 return True
-            else:
-                LOG.error("Mismatch in ACL configuration for %s" % acl_no)
-                return False
-        else:
-            LOG.debug("%s is not present in config" % acl_no)
+            LOG.error("Mismatch in ACL configuration for %s" % acl_no)
             return False
+        LOG.debug("%s is not present in config" % acl_no)
+        return False
 
     def _cfg_exists(self, cfg_str):
+        """Check a partial config string exists in the running config."""
         ioscfg = self._get_running_config()
         parse = CiscoConfParse(ioscfg)
         cfg_raw = parse.find_lines("^" + cfg_str)
         LOG.debug("_cfg_exists(): Found lines %s " % cfg_raw)
         if len(cfg_raw) > 0:
             return True
-        else:
-            return False
+        return False
 
     def set_interface(self, name, ip_address, mask):
         conn = self._get_connection()
@@ -488,8 +501,6 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
             confstr = snippets.SET_NAT % (outer_intfc, 'outside')
             rpc_obj = conn.edit_config(target='running', config=confstr)
             self._check_response(rpc_obj, 'SET_NAT')
-        # finally:
-        #     conn.unlock(target='running')
 
     def add_interface_nat(self, intfc_name, intfc_type):
         conn = self._get_connection()
@@ -556,33 +567,31 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
     def _get_static_route_cfg(self):
         ioscfg = self._get_running_config()
         parse = CiscoConfParse(ioscfg)
-        res = parse.find_lines('ip route')
-        return res
+        return parse.find_lines('ip route')
 
     def add_default_static_route(self, gw_ip, vrf):
         conn = self._get_connection()
         confstr = snippets.DEFAULT_ROUTE_CFG % (vrf, gw_ip)
         if not self._cfg_exists(confstr):
-                confstr = snippets.SET_DEFAULT_ROUTE % (vrf, gw_ip)
-                rpc_obj = conn.edit_config(target='running', config=confstr)
-                self._check_response(rpc_obj, 'SET_DEFAULT_ROUTE')
+            confstr = snippets.SET_DEFAULT_ROUTE % (vrf, gw_ip)
+            rpc_obj = conn.edit_config(target='running', config=confstr)
+            self._check_response(rpc_obj, 'SET_DEFAULT_ROUTE')
 
     def remove_default_static_route(self, gw_ip, vrf):
         conn = self._get_connection()
         confstr = snippets.DEFAULT_ROUTE_CFG % (vrf, gw_ip)
         if self._cfg_exists(confstr):
-                confstr = snippets.REMOVE_DEFAULT_ROUTE % (vrf, gw_ip)
-                rpc_obj = conn.edit_config(target='running', config=confstr)
-                self._check_response(rpc_obj, 'REMOVE_DEFAULT_ROUTE')
+            confstr = snippets.REMOVE_DEFAULT_ROUTE % (vrf, gw_ip)
+            rpc_obj = conn.edit_config(target='running', config=confstr)
+            self._check_response(rpc_obj, 'REMOVE_DEFAULT_ROUTE')
 
     def edit_running_config(self, confstr, snippet):
         conn = self._get_connection()
         rpc_obj = conn.edit_config(target='running', config=confstr)
         if self._check_response(rpc_obj, snippet):
-                LOG.info(_("%s successfully executed"), snippet)
+            LOG.info(_("%s successfully executed"), snippet)
         else:
-                LOG.exception(_("Failed executing %s"), snippet)
-        return
+            LOG.exception(_("Failed executing %s"), snippet)
 
     def _check_response(self, rpc_obj, snippet_name):
         """This function checks the rpc response object for status.
@@ -613,8 +622,8 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         if "<ok />" in xml_str:
             LOG.debug(_("RPCReply for %s is OK"), snippet_name)
             return True
-        else:
-            e_type = rpc_obj._root[0][0].text
-            e_tag = rpc_obj._root[0][1].text
-            params = {'snippet': snippet_name, 'type': e_type, 'tag': e_tag}
-            raise CSR1000vConfigException(**params)
+        # Not Ok, we throw a ConfigurationException
+        e_type = rpc_obj._root[0][0].text
+        e_tag = rpc_obj._root[0][1].text
+        params = {'snippet': snippet_name, 'type': e_type, 'tag': e_tag}
+        raise CSR1000vConfigException(**params)
