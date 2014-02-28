@@ -45,7 +45,7 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         try:
             self._csr_host = device_params['ip_address']
             self._csr_ssh_port = device_params['port']
-            # Using defaults for user/password if absent
+            # Using defaults for user/password if not in device params
             self._csr_user = device_params.get('user', 'stack')
             self._csr_password = device_params.get('password', 'cisco')
             self._timeout = cfg.CONF.device_connection_timeout

@@ -416,12 +416,12 @@ class CiscoCfgAgent(manager.Manager):
     def _process_routers(self, routers, all_routers=False):
         """Process the set of routers.
 
-        Iterating on the set of routers  received and comparing it with the
+        Iterating on the set of routers received and comparing it with the
         set of routers already in the agent, new routers which are added are
         identified. We check the reachability of hosting device where the
-        router is hosted and backlogs them if neccessary. For routers which
-        are only updated, we call `process_router()` for them. Note that this
-        is done in an independent thread.
+        router is hosted and backlogs it if necessary. For routers which
+        are only updated, we call `process_router()` on them. Note that
+        for each router this is done in an independent thread.
 
         When all_routers is set to True, this will result in the detection and
         deletion of routers which are removed also.
