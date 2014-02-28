@@ -35,12 +35,11 @@ class CSR1000vInitializationException(DriverException):
 
 class CSR1000vConnectionException(DriverException):
     """
-    Exception created by the CSR1000v Routing Driver class.
+    Connection exception when connecting to CSR1000v hosting device.
     """
     message = (_("Failed connecting to CSR1000v. Reason: %(reason)s. "
                "Connection Params are Host:%(host)s, "
-               "Port:%(port)s, User:%(user)s, Password:%(pass)s, "
-               "Device timeout:%(timeout)s"))
+               "Port:%(port)s, Device timeout:%(timeout)s"))
 
 
 class CSR1000vConfigException(DriverException):
