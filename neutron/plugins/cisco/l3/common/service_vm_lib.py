@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -57,11 +55,14 @@ class ServiceVMManager:
     def get_service_vm_status(self, vm_id):
         try:
             status = self._nclient.servers.get(vm_id).status
+        # There are several individual Nova client exceptions but they have
+        # no other common base than Exception, therefore the long list.
         except (nova_exc.UnsupportedVersion, nova_exc.CommandError,
                 nova_exc.AuthorizationFailure, nova_exc.NoUniqueMatch,
                 nova_exc.AuthSystemNotFound, nova_exc.NoTokenLookupException,
                 nova_exc.EndpointNotFound, nova_exc.AmbiguousEndpoints,
-                nova_exc.ConnectionRefused, nova_exc.ClientException) as e:
+                nova_exc.ConnectionRefused, nova_exc.ClientException,
+                Exception) as e:
             LOG.error(_('Failed to get status of service VM instance %(id)s, '
                         'due to %(err)s'), {'id': vm_id, 'err': e})
             status = constants.SVM_ERROR
@@ -97,16 +98,18 @@ class ServiceVMManager:
             server = self._nclient.servers.create(
                 instance_name, image.id, flavor.id, nics=nics, files=files,
                 config_drive=(files != {}))
+        # There are several individual Nova client exceptions but they have
+        # no other common base than Exception, therefore the long list.
         except (nova_exc.UnsupportedVersion, nova_exc.CommandError,
                 nova_exc.AuthorizationFailure, nova_exc.NoUniqueMatch,
                 nova_exc.AuthSystemNotFound, nova_exc.NoTokenLookupException,
                 nova_exc.EndpointNotFound, nova_exc.AmbiguousEndpoints,
-                nova_exc.ConnectionRefused, nova_exc.ClientException) as e:
+                nova_exc.ConnectionRefused, nova_exc.ClientException,
+                Exception) as e:
             LOG.error(_('Failed to create service VM instance: %s'), e)
             hosting_device_drv.delete_configdrive_files(context, mgmt_port)
             return None
-        res = {'id': server.id}
-        return res
+        return {'id': server.id}
 
 #    def delete_service_vm_dis(self, context, vm_id, hosting_device_drv,
 #                              mgmt_nw_id):
@@ -121,11 +124,14 @@ class ServiceVMManager:
             hosting_device_drv.delete_configdrive_files(context, ports[0])
         try:
             self._nclient.servers.delete(vm_id)
+        # There are several individual Nova client exceptions but they have
+        # no other common base than Exception, therefore the long list.
         except (nova_exc.UnsupportedVersion, nova_exc.CommandError,
                 nova_exc.AuthorizationFailure, nova_exc.NoUniqueMatch,
                 nova_exc.AuthSystemNotFound, nova_exc.NoTokenLookupException,
                 nova_exc.EndpointNotFound, nova_exc.AmbiguousEndpoints,
-                nova_exc.ConnectionRefused, nova_exc.ClientException) as e:
+                nova_exc.ConnectionRefused, nova_exc.ClientException,
+                Exception) as e:
             LOG.error(_('Failed to delete service VM instance %(id)s, '
                         'due to %(err)s'), {'id': vm_id, 'err': e})
             result = False
@@ -147,6 +153,9 @@ class ServiceVMManager:
                 context, mgmt_port)
             files = dict((label, open(name)) for label, name in
                          cfg_files.items())
+            LOG.info(_('Created files %(files)s with label %(label)s for '
+                       'config drive'),
+                     {'files': cfg_files.values(), 'keys': files.keys()})
         except IOError:
             return None
 
@@ -163,11 +172,11 @@ class ServiceVMManager:
         myserver = {'server': {'adminPass': "MVk5HPrazHcG",
                     'id': vm_id,
                     'links': [{'href': "http://openstack.example.com/v2/"
-                                        "openstack/servers/" + vm_id,
+                                       "openstack/servers/" + vm_id,
                                'rel': "self"},
-                                {'href': "http://openstack.example.com/"
-                                          "openstack/servers/" + vm_id,
-                                 'rel': "bookmark"}]}}
+                              {'href': "http://openstack.example.com/"
+                                       "openstack/servers/" + vm_id,
+                               'rel': "bookmark"}]}}
 
         return myserver['server']
 
@@ -188,7 +197,7 @@ class ServiceVMManager:
                                                 filters={'device_id': [vm_id]})
             for port in ports:
                 self._core_plugin.delete_port(context, port['id'])
-        except n_exc.NeutronException as e:
+        except Exception as e:
             LOG.error(_('Failed to delete service VM %(id)s due to %(err)s'),
                       {'id': vm_id, 'err': e})
             result = False

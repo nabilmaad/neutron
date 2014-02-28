@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -32,6 +30,7 @@ from sqlalchemy.orm import joinedload
 from neutron.common import utils
 from neutron import context as neutron_context
 from neutron import manager
+from neutron.openstack.common import excutils
 from neutron.openstack.common import importutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import timeutils
@@ -48,22 +47,28 @@ HOSTING_DEVICE_MANAGER_OPTS = [
     cfg.StrOpt('l3_admin_tenant', default='L3AdminTenant',
                help=_("Name of the L3 admin tenant")),
     cfg.StrOpt('management_network', default='osn_mgmt_nw',
-               help=_("Name of management network for CSR VM configuration")),
+               help=_("Name of management network for CSR VM configuration."
+                      "Default value is osn_mgmt_nw")),
     cfg.StrOpt('default_security_group', default='mgmt_sec_grp',
-               help=_("Default security group applied on management port")),
+               help=_("Default security group applied on management port."
+                      "Default value is mgmt_sec_grp")),
     cfg.IntOpt('csr1kv_flavor', default=621,
-               help=_("Name or UUID of Nova flavor used for CSR1kv VM")),
+               help=_("Name or UUID of Nova flavor used for CSR1kv VM"
+                      "Default value is 621")),
     cfg.StrOpt('csr1kv_image', default='csr1kv_openstack_img',
-               help=_("Name or UUID of Glance image used for CSR1kv VM")),
+               help=_("Name or UUID of Glance image used for CSR1kv VM"
+                      "Default value is csr1kv_openstack_img")),
     cfg.IntOpt('max_routers_per_csr1kv', default=1,
                help=_("The maximum number of logical routers a CSR1kv VM "
-                      "instance should host")),
+                      "instance should host. Default value is 1")),
     cfg.IntOpt('csr1kv_booting_time', default=420,
-               help=_("The time in seconds it typically takes to "
-                      "boot a CSR1kv VM")),
+               help=_("The time in seconds it typically takes to boot a "
+                      "CSR1kv VM into operational state. Default value "
+                      "is 420.")),
     cfg.IntOpt('standby_pool_size', default=1,
                help=_("The number of running service VMs to maintain "
-                      "as a pool of standby hosting devices")),
+                      "as a pool of standby hosting devices. Default"
+                      "value is 1")),
 ]
 
 cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS)
@@ -96,8 +101,8 @@ class HostingDeviceManager(object):
         'desired': cfg.CONF.max_routers_per_csr1kv *
         cfg.CONF.standby_pool_size}}
 
-    # Dictionary of hosting device capacities
-    _capacities = {}
+    # Dictionary of hosting device capacity
+    _capacity = {}
 
     def __init__(self):
         auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
@@ -165,7 +170,7 @@ class HostingDeviceManager(object):
                                 'Please assign one.'))
                     return
                 elif num_subnets > 1:
-                    LOG.info(_('The management network has %s subnets. The '
+                    LOG.info(_('The management network has %d subnets. The '
                                'first one will be used.'), num_subnets)
                 cls._mgmt_nw_uuid = net[0].get('id')
             elif len(net) > 1:
@@ -206,9 +211,7 @@ class HostingDeviceManager(object):
         return cls._mgmt_sec_grp_id
 
     def get_hosting_device_driver(self, context, host_type):
-        """Returns the driver for hosting device with specified
-           hosting_device_id or hosting devices with specified host_type.
-        """
+        """Returns the driver for host_type hosting devices."""
         try:
             return self._hosting_device_drivers[host_type]
         except KeyError:
@@ -218,17 +221,15 @@ class HostingDeviceManager(object):
                 self._hosting_device_drivers[host_type] = (
                     importutils.import_object(template.get('device_driver')))
             except ImportError:
-                LOG.exception(_("Error loading hosting device driver "
-                                "%(driver)s for host type %(host_type)s"),
-                              {'driver': template.get('device_driver'),
-                               'host_type': host_type})
-                raise
+                with excutils.save_and_reraise_exception():
+                    LOG.exception(_("Error loading hosting device driver "
+                                    "%(driver)s for host type %(host_type)s"),
+                                  {'driver': template.get('device_driver'),
+                                   'host_type': host_type})
             return self._hosting_device_drivers[host_type]
 
     def get_hosting_device_plugging_driver(self, context, host_type):
-        """Returns the plugging driver for hosting device with specified
-           hosting_device_id or hosting devices with specified host_type.
-        """
+        """Returns the plugging driver for a host_type hosting device."""
         try:
             return self._plugging_drivers[host_type]
         except KeyError:
@@ -238,36 +239,34 @@ class HostingDeviceManager(object):
                 self._plugging_drivers[host_type] = importutils.import_object(
                     template.get('plugging_driver'))
             except ImportError:
-                LOG.exception(_("Error loading plugging driver %(driver)s for "
-                                "host type %(host_type)s"),
-                              {'driver': template.get('plugging_driver'),
-                               'host_type': host_type})
-                raise
+                with excutils.save_and_reraise_exception():
+                    LOG.exception(_("Error loading plugging driver %(driver)s "
+                                    "for host type %(host_type)s"),
+                                  {'driver': template.get('plugging_driver'),
+                                   'host_type': host_type})
             return self._plugging_drivers[host_type]
 
     def get_hosting_device_capacity(self, context, host_type):
-        """Returns how many logical resources a hosting device
-           of specified host_type can host.
-        """
+        """Returns the slot capacity host_type hosting devices have."""
         try:
-            return self._capacities[host_type]
+            return self._capacity[host_type]
         except KeyError:
             template = (self.get_hosting_device_template(context, host_type) or
                         {})
             capacity = {}
             try:
-                for spec in template.get('capacities', "").split(','):
+                for spec in template.get('capacity', "").split(','):
                     resource, num = spec.split(':')
                     capacity['num_' + resource + 's'] = int(num)
             except ValueError:
-                LOG.exception(_("Error parsing capacities specification: "
-                                "%(capacities)s for host type %(host_type)s"),
-                              {'capacities': template.get('capacities'),
+                LOG.exception(_("Error parsing capacity specification: "
+                                "%(capacity)s for host type %(host_type)s"),
+                              {'capacity': template.get('capacity'),
                                'host_type': host_type})
                 capacity = {}
             if not capacity:
                 return
-            self._capacities[host_type] = capacity
+            self._capacity[host_type] = capacity
             return capacity
 
     def report_hosting_device_shortage(self, context, host_type, category):
@@ -378,7 +377,7 @@ class HostingDeviceManager(object):
                 'configuration_mechanism': 'Netconf',
                 'transport_port': cl3_const.CSR1kv_SSH_NETCONF_PORT,
                 'booting_time': cfg.CONF.csr1kv_booting_time,
-                'capacities': 'router:' + str(cfg.CONF.max_routers_per_csr1kv),
+                'capacity': 'router:' + str(cfg.CONF.max_routers_per_csr1kv),
                 'tenant_bound': None,
                 'device_driver': 'neutron.plugins.cisco.l3.hosting_device_'
                                  'drivers.csr1kv_hd_driver.'
@@ -485,7 +484,9 @@ class HostingDeviceManager(object):
             slots['available'] = capacity * non_tenant_bound_he - n_used_slots
 
     def _maintain_hosting_device_pool(self, context, host_type, host_category):
-        """Ensures that the number of standby hosting devices (essentially
+        """Maintains the pool of host_type hosting devices.
+
+        Ensures that the number of standby hosting devices (essentially
         service VMs) is kept at a suitable level so that resource creation is
         not slowed down by booting of the hosting device.
         """
@@ -534,10 +535,10 @@ class HostingDeviceManager(object):
 
     def _create_svc_vm_hosting_devices(self, context, num, host_type,
                                        tenant_bound=None):
-        """Creates a number of service VM instances that will act as
-        routing service VM. These hosting devices can be bound to
-        a certain tenant or for shared use. A list with the created
-        hosting device VMs is returned.
+        """Creates a number of service VM instances.
+
+        These hosting devices can be bound to a certain tenant or for shared
+        use. A list with the created hosting device VMs is returned.
         """
         hosting_devices = []
         plugging_drv = self.get_hosting_device_plugging_driver(
@@ -551,7 +552,7 @@ class HostingDeviceManager(object):
             return hosting_devices
         # These resources are owned by the L3AdminTenant
         birth_date = timeutils.utcnow()
-        for i in xrange(0, num):
+        for i in xrange(num):
             res = plugging_drv.create_hosting_device_resources(
                 context, self.l3_tenant_id(), self.mgmt_nw_id(),
                 self.mgmt_sec_grp_id(), capacity)
@@ -572,7 +573,6 @@ class HostingDeviceManager(object):
                         admin_state_up=True,
                         host_type=template['host_type'],
                         host_category=template['host_category'],
-#                        ip_address='10.0.100.5',
                         ip_address=mgmt_port['fixed_ips'][0]['ip_address'],
                         transport_port=template['transport_port'],
                         cfg_agent_id=None,
@@ -592,9 +592,9 @@ class HostingDeviceManager(object):
 
     def _delete_unused_service_vm_hosting_devices(
             self, context, num, host_type, tenant_bound=None):
-        """Deletes <num> or less unused service VM instances that act as
-        <host_type> hosting devices (for a certain tenant or for shared
-        use). The number of deleted service vm instances is returned.
+        """Deletes <num> or less unused host_type service VM instances.
+
+        The number of deleted service vm instances is returned.
         """
         # Delete the "youngest" hosting devices since they are
         # more likely to not have finished booting
@@ -620,7 +620,7 @@ class HostingDeviceManager(object):
         hd_candidates = query.all()
         num_possible_to_delete = min(len(hd_candidates), num)
         with context.session.begin(subtransactions=True):
-            for i in xrange(0, num_possible_to_delete):
+            for i in xrange(num_possible_to_delete):
                 res = plugging_drv.get_hosting_device_resources(
                     context, hd_candidates[i]['id'], self.l3_tenant_id(),
                     self.mgmt_nw_id())
@@ -635,8 +635,9 @@ class HostingDeviceManager(object):
 
     def _delete_dead_service_vm_hosting_device(self, context, hosting_device,
                                                logical_resource_ids):
-        """Deletes a presumably dead service VM. This will indirectly
-           make all of its hosted resources (i.e., routers) unscheduled.
+        """Deletes a presumably dead service VM.
+
+        This will indirectly make all of its hosted resources unscheduled.
         """
         if hosting_device is None:
             return

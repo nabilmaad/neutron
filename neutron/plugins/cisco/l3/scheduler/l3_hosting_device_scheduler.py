@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -34,8 +32,10 @@ class L3HostingDeviceScheduler(object):
     def schedule_router_on_svm_hosting_device(self, context, router,
                                               host_type=cl3_const.CSR1KV_HOST):
         """Schedules a router on a service VM hosting device.
+
         Returns a tuple with selected hosting device and the number of routers
-        it hosts, i.e., the number of slots that are occupied."""
+        it hosts, i.e., the number of slots that are occupied.
+        """
 
         # mysql> SELECT *, COUNT(router_id) as num_alloc
         # FROM hostingdevices AS he
@@ -98,9 +98,9 @@ class L3HostingDeviceScheduler(object):
                                           r_hd_binding):
         with context.session.begin(subtransactions=True):
             #TODO(bobmel): Determine host_type from router_type using the
-            #TODO          binding table or a dict built from that table.
-            #TODO(bobmel): use scheduler specified by template for that
-            #TODO          host_type.
+            #              binding table or a dict built from that table.
+            #              use scheduler specified by template for that
+            #              host_type.
             if router['router_type'] == cl3_const.CSR_ROUTER_TYPE:
                 selected_hd = self.schedule_router_on_svm_hosting_device(
                     context, router)
@@ -132,8 +132,8 @@ class L3HostingDeviceScheduler(object):
         if hosting_device_db is None:
             return
         if router['router_type'] == cl3_const.CSR_ROUTER_TYPE:
-            released = self._dev_mgr.release_hosting_device_slot(
-                context.elevated(), hosting_device_db)
+            self._dev_mgr.release_hosting_device_slot(context.elevated(),
+                                                      hosting_device_db)
 
     @property
     def _dev_mgr(self):

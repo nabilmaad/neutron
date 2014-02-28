@@ -1,17 +1,17 @@
-# Copyright (c) 2013 OpenStack Foundation.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+#    Licensed under the Apache License, Version 2.0 (the "License"); you may
+#    not use this file except in compliance with the License. You may obtain
+#    a copy of the License at
 #
-#    http://www.apache.org/licenses/LICENSE-2.0
+#         http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-# implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
+#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
+#    License for the specific language governing permissions and limitations
+#    under the License.
+#
 
 from neutron.common import constants
 from neutron.common import topics
@@ -49,9 +49,7 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
 
     def _agent_notification(self, context, method, routers,
                             operation, data):
-        """Notify changed routers to the Cisco configuration agents
-        of their hosting devices or the routers' hosting l3 agents.
-        """
+        """Notify individual l3 agents and Cisco cfg agents."""
         adminContext = context.is_admin and context or context.elevated()
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
@@ -83,9 +81,7 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
                           version='1.1')
 
     def _notification(self, context, method, routers, operation, data):
-        """Notify all the l3 agents and Cisco cfg agents that are
-        hosting or configuring the routers, respectively.
-        """
+        """Notify all or individual l3 agents and Cisco cfg agents."""
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
         if utils.is_extension_supported(
@@ -105,8 +101,7 @@ class L3JointAgentNotifyAPI(proxy.RpcProxy):
                 topic=topics.L3_AGENT)
 
     def _notification_fanout(self, context, method, router_id):
-        """Fanout the deleted router to all L3 agents.
-        """
+        """Fanout the deleted router to all L3 agents."""
         LOG.debug(_('Fanout notify agent at %(topic)s the message '
                     '%(method)s on router %(router_id)s'),
                   {'topic': topics.DHCP_AGENT,

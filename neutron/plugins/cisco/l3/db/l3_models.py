@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -52,10 +50,10 @@ class HostingDeviceTemplate(model_base.BASEV2, models_v2.HasId,
     # from this template) to boot into operational state.
     booting_time = sa.Column(sa.Integer, default=0)
     #TODO(bobmel): Drop 'capacities', and replace by 'capacity' that is a
-    #TODO          measure of slots. Then introduce '???' which is a list
-    #TODO          specifying how many slots the logical resources need.
-    # list of num_<resource>:<num_instances>, ...
-    capacities = sa.Column(sa.String(255))
+    #              measure of slots. Then introduce '???' which is a list
+    #              specifying how many slots the logical resources need.
+    # slot capacity
+    capacity = sa.Column(sa.String(255))
     # 'tenant_bound' is empty or is id of the only tenant allowed to
     # own/place resources on hosting devices created using this template
     tenant_bound = sa.Column(sa.String(255))

@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -66,14 +64,14 @@ class DummyTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                 sub_spec = {'subnet': {
                     'tenant_id': tenant_id,
                     'admin_state_up': True,
-                    'cidr': n1kv_const.SUB_PREFX,
+                    'cidr': n1kv_const.SUBNET_PREFIX,
                     'enable_dhcp': False,
                     'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
                     'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
                     'ip_version': 4,
                     'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                     'host_routes': attributes.ATTR_NOT_SPECIFIED}}
-                for i in xrange(0, max_hosted):
+                for i in xrange(max_hosted):
                     # Create T1 trunk network for this router
                     indx = str(i + 1)
                     n_spec['network'].update(
@@ -95,7 +93,7 @@ class DummyTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                         {'name': n1kv_const.T1_PORT_NAME + indx,
                          'network_id': t1_n[i]['id']})
                     t_p.append(self._core_plugin.create_port(context, p_spec))
-                    LOG.debug(_('Created T1 port with name %(name)s,  '
+                    LOG.debug(_('Created T1 port with name %(name)s, '
                                 'id %(id)s and subnet %(subnet)s'),
                               {'name': t1_n[i]['name'],
                                'id': t1_n[i]['id'],

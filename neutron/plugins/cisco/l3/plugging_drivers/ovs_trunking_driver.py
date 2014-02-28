@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -18,7 +16,6 @@
 
 from neutron.api.v2 import attributes
 from neutron.common import exceptions as n_exc
-from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import n1kv_constants as n1kv_const
 from neutron.plugins.cisco.l3.plugging_drivers import n1kv_trunking_driver
@@ -30,9 +27,10 @@ TRUNKED_NETWORKS = 'trunkport:trunked_networks'
 
 
 class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
-    """This is a driver class for service VMs used together with
-    the a patched version of the Openvswitch plugin that supports
-    VLAN trunking.
+    """This is a driver class for service VMs.
+
+    It is used together with a patched version of the Openvswitch plugin that
+    supports VLAN trunking.
     """
     def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
                                         mgmt_sec_grp_id, max_hosted, **kwargs):

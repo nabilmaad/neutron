@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -57,7 +55,7 @@ cfg.CONF.register_opts(N1KV_TRUNKING_DRIVER_OPTS)
 
 MIN_LL_VLAN_TAG = 10
 MAX_LL_VLAN_TAG = 200
-FULL_VLAN_SET = set(range(MIN_LL_VLAN_TAG, MAX_LL_VLAN_TAG))
+FULL_VLAN_SET = set(range(MIN_LL_VLAN_TAG, MAX_LL_VLAN_TAG + 1))
 
 # Port lookups can fail so retries are needed
 MAX_HOSTING_PORT_LOOKUP_ATTEMPTS = 10
@@ -65,8 +63,9 @@ SECONDS_BETWEEN_HOSTING_PORT_LOOKSUPS = 2
 
 
 class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
-    """This is a driver class for service VMs used together with
-    the N1kv plugin. It makes use that plugin's VLAN trunk feature.
+    """Driver class for service VMs used with the N1kv plugin.
+
+    The driver makes use N1kv plugin's VLAN trunk feature.
     """
     _n1kv_mgmt_pp_id = None
     _n1kv_t1_pp_id = None
@@ -190,7 +189,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                     'ip_version': 4,
                     'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                     'host_routes': attributes.ATTR_NOT_SPECIFIED}}
-                for i in xrange(0, max_hosted):
+                for i in xrange(max_hosted):
                     # Create T1 trunk network for this router
                     indx = str(i + 1)
                     n_spec['network'].update(
@@ -214,7 +213,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
                          'network_id': t1_n[i]['id'],
                          'n1kv:profile_id': self.n1kv_t1_pp_id()})
                     t_p.append(self._core_plugin.create_port(context, p_spec))
-                    LOG.debug(_('Created T1 port with name %(name)s,  '
+                    LOG.debug(_('Created T1 port with name %(name)s, '
                                 'id %(id)s and subnet %(subnet)s'),
                               {'name': t1_n[i]['name'],
                                'id': t1_n[i]['id'],
@@ -394,12 +393,13 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
             trunk_spec = port_db['network_id']
         LOG.info(_('Updating trunk: %(action)s VLAN %(tag)d for network_id '
                    '%(id)s'), {'action': action,
-                              'tag': port_db.hosting_info.segmentation_tag,
-                              'id': port_db['network_id']})
-        #TODO(bobmel): enable line below when N1kv does not trunk all
-        #self._core_plugin.update_network(
-        #    context, port_db.hosting_info.hosting_port['network_id'],
-        #    {'network': {action: trunk_spec}})
+                               'tag': port_db.hosting_info.segmentation_tag,
+                               'id': port_db['network_id']})
+        #TODO(bobmel): enable statement below when N1kv does not trunk all
+        if False:
+            self._core_plugin.update_network(
+                context, port_db.hosting_info.hosting_port['network_id'],
+                {'network': {action: trunk_spec}})
 
     def _get_trunk_mappings(self, context, hosting_port_id):
         query = context.session.query(HostedHostingPortBinding)

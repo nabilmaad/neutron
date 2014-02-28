@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright 2013 Cisco Systems, Inc.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -57,8 +55,8 @@ class CiscoRouterPluginRpcCallbacks(l3_rpc_base.L3RpcCallbackMixin,
 
 class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
                         l3_router_appliance_db.
-                        L3_router_appliance_db_mixin,
-#                                l3_gwmode_db.L3_NAT_db_mixin,
+                        L3RouterApplianceDBMixin,
+                        #l3_gwmode_db.L3_NAT_db_mixin,
                         agt_sch_db.CompositeAgentSchedulerDbMixin):
 
     """Implementation of Cisco L3 Router Service Plugin for Neutron.
@@ -67,7 +65,7 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
     router and floatingip resources and manages associated
     request/response.
     All DB functionality is implemented in class
-    l3_router_appliance_db.L3_router_appliance_db_mixin.
+    l3_router_appliance_db.L3RouterApplianceDBMixin.
     """
     supported_extension_aliases = ["router",  # "ext-gw-mode",
                                    "extraroute", "l3_agent_scheduler"]

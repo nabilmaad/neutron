@@ -1,4 +1,4 @@
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -46,7 +46,7 @@ CFG_AGENT = 'cisco_cfg_agent'
 # driver class for a particular service
 SERVICE_ROUTING = "routing"
 
-#Device Configuration Protocol
+# Device Configuration Protocol
 DEV_CFG_PROTO_NETCONF = "NETCONF"
 DEV_CFG_PROTO_REST = "REST_API"
 

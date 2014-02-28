@@ -1,7 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2014 OpenStack Foundation.
-# All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -159,8 +156,10 @@ class RouterTypePluginBase(object):
     @abstractmethod
     def create_router_type(self, context, type_name,
                            hosting_device_template_id):
-        """Creates a router type and binds it to the specified
-           hosting device template."""
+        """Creates a router type.
+
+         Also binds it to the specified hosting device template.
+         """
         pass
 
     @abstractmethod

@@ -1,7 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-
-# Copyright (c) 2013 OpenStack Foundation.
-# All Rights Reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -14,6 +11,8 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+#
+# Based on Neutron L3 Agent scheduler.
 
 import random
 
@@ -21,9 +20,9 @@ from sqlalchemy.orm import exc
 from sqlalchemy.sql import exists
 
 from neutron.common import constants
-from neutron.db import l3_db
 from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db
+from neutron.db import l3_db
 from neutron.openstack.common import log as logging
 from neutron.plugins.cisco.l3.common import constants as cl3_constants
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db
@@ -33,18 +32,21 @@ LOG = logging.getLogger(__name__)
 
 
 class L3AgentCompositeScheduler(object):
-    """A composite scheduler that schedules a) network namespace based
-    routers to l3 agents, as well as, b) hosting devices to Cisco cfg
-    agents. In both cases the scheduling is a simple random selection
-    among qualified candidates."""
+    """A composite scheduler for Cisco router service plugin.
+
+    It schedules a) network namespace based routers to l3 agents, as
+    well as, b) hosting devices to Cisco cfg agents. In both cases the
+    scheduling is a simple random selection among qualified candidates.
+    """
 
     def auto_schedule_hosting_devices_on_cfg_agent(self, context, agent_host,
                                                    router_id):
-        """Schedules unassociated hosting devices to the l3 cfg agent
-        running on <agent_host>. If <router_id> is given, then only
-        hosting device hosting the router with that id is scheduled (if
-        it is unassociated). If no <router_id> is given, then all
-        unassociated hosting devices are scheduled.
+        """Schedules unassociated hosting devices to l3 cfg agent.
+
+        Schedules hosting device to agent running on <agent_host>.
+        If <router_id> is given, then only hosting device hosting the router
+        with that id is scheduled (if it is unassociated). If no <router_id>
+        is given, then all unassociated hosting devices are scheduled.
         """
         with context.session.begin(subtransactions=True):
             # Check if there is a valid l3 cfg agent on the host
@@ -110,8 +112,7 @@ class L3AgentCompositeScheduler(object):
             if router_type != cl3_constants.NAMESPACE_ROUTER_TYPE:
                 LOG.debug(_('Router %(router_id)s is of type %(router_type)s'
                             ' which is not hosted by l3 agents'),
-                            {'router_id': router_id,
-                             'router_type': router_type})
+                          {'router_id': router_id, 'router_type': router_type})
                 return False
             # check if the specified router is hosted
             if router_id:
