@@ -43,7 +43,7 @@ LOG = logging.getLogger(__name__)
 # This router service plugin class is just for testing
 class TestL3RouterAppliancePlugin(db_base_plugin_v2.CommonDbMixin,
                                   l3_router_appliance_db.
-                                  L3_router_appliance_db_mixin):
+                                  L3RouterApplianceDBMixin):
 
     supported_extension_aliases = ["router",  # "ext-gw-mode",
                                    "extraroute"]
@@ -128,7 +128,7 @@ def get_hosting_device_template_mock(self, context, host_type):
             'configuration_mechanism': 'Netconf',
             'transport_port': cl3_const.CSR1kv_SSH_NETCONF_PORT,
             'booting_time': cfg.CONF.csr1kv_booting_time,
-            'capacities': 'router:' + str(cfg.CONF.max_routers_per_csr1kv),
+            'capacity': 'router:' + str(cfg.CONF.max_routers_per_csr1kv),
             'tenant_bound': None,
             'device_driver': 'neutron.plugins.cisco.l3.test.'
                              'hd_dummy_driver.DummyHostingDeviceDriver',
@@ -166,12 +166,18 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
             plugin=plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins)
 
+        sched_opts = [
+            cfg.BoolOpt('router_auto_schedule', default=False),
+        ]
+        cfg.CONF.register_opts(sched_opts)
+
         # Set to None to reload the drivers
         notifier_api._drivers = None
         cfg.CONF.set_override("notification_driver", [test_notifier.__name__])
 
         cfg.CONF.set_override('allow_sorting', True)
         test_opts = [
+
             cfg.StrOpt('auth_protocol', default='http'),
             cfg.StrOpt('auth_host', default='localhost'),
             cfg.IntOpt('auth_port', default=35357),
@@ -206,7 +212,7 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
         sched_mock.schedule_router_on_hosting_device.return_value = None
         self.sched = mock.patch(
             'neutron.plugins.cisco.l3.db.l3_router_appliance_db.'
-            'L3_router_appliance_db_mixin.hosting_scheduler', sched_mock)
+            'L3RouterApplianceDBMixin.hosting_scheduler', sched_mock)
         self.sched.start()
 
         # A management network/subnet is needed
@@ -228,25 +234,20 @@ class L3RouterApplianceTestCase(test_ext_extraroute.ExtraRouteDBSepTestCase):
                 self._delete('ports', p['id'])
             self._delete('subnets', self.mgmt_subnet['subnet']['id'])
             self._delete('networks', self.mgmt_nw['network']['id'])
-        self.delete_svc_vm_fcn_p.stop()
-        self.dispatch_svc_vm_fcn_p.stop()
-        self.tenant_id_fcn_p.stop()
-        self.sched.stop()
+        mock.patch.stopall()
         super(test_l3_plugin.L3NatDBSepTestCase, self).tearDown()
 
     def test_get_network_succeeds_without_filter(self):
         plugin = NeutronManager.get_plugin()
         dev_mgr = hosting_device_manager_db.HostingDeviceManager.get_instance()
         ctx = context.Context(None, None, is_admin=True)
-        result = plugin.get_networks(ctx, filters=None)
+        nets = plugin.get_networks(ctx, filters=None)
         # Remove mgmt network from list
-        to_del = -1
-        for i in xrange(0, len(result)):
-            if result[i].get('id') == dev_mgr.mgmt_nw_id():
-                to_del = i
-        if to_del != -1:
-            del result[to_del]
-        self.assertEqual(result, [])
+        for i in xrange(len(nets)):
+            if nets[i].get('id') == dev_mgr.mgmt_nw_id():
+                del nets[i]
+                break
+        self.assertEqual(nets, [])
 
     def test_list_nets_external(self):
         with self.network() as n1:

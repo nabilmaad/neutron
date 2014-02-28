@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -68,14 +66,13 @@ class RouterInternalError(n_exc.NeutronException):
     message = _("Internal error during router processing.")
 
 
+#TODO(bob-melander): Create binding record when this exception happens.
 class RouterBindingInfoError(n_exc.NeutronException):
     message = _("Could not get binding information for router %(router_id)s.")
 
 
-class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
-    """Mixin class to support router appliances to implement Neutron's
-       L3 routing functionality
-    """
+class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
+    """Mixin class implementing Neutron's routing service using appliances."""
 
     hosting_scheduler = None
 
@@ -102,7 +99,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 self._dev_mgr.mgmt_nw_id() is None):
             raise RouterCreateInternalError()
         with context.session.begin(subtransactions=True):
-            router_created = (super(L3_router_appliance_db_mixin, self).
+            router_created = (super(L3RouterApplianceDBMixin, self).
                               create_router(context, router))
             r_hd_b_db = RouterHostingDeviceBinding(
                 router_id=router_created['id'],
@@ -138,7 +135,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                     p_drv.teardown_logical_port_connectivity(e_context,
                                                              o_r_db.gw_port)
             router_updated = (
-                super(L3_router_appliance_db_mixin, self).update_router(
+                super(L3RouterApplianceDBMixin, self).update_router(
                     context, id, router))
             routers = [copy.deepcopy(router_updated)]
             self._add_type_and_hosting_device_info(e_context, routers[0])
@@ -162,14 +159,13 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                                                              router_db.gw_port)
             # conditionally remove router from backlog just to be sure
             self.remove_router_from_backlog('id')
-            super(L3_router_appliance_db_mixin, self).delete_router(context,
-                                                                    id)
+            super(L3RouterApplianceDBMixin, self).delete_router(context, id)
         l3_rpc_joint_agent_api.L3JointAgentNotify.router_deleted(context,
                                                                  router)
 
     def add_router_interface(self, context, router_id, interface_info):
         with context.session.begin(subtransactions=True):
-            info = (super(L3_router_appliance_db_mixin, self).
+            info = (super(L3RouterApplianceDBMixin, self).
                     add_router_interface(context, router_id, interface_info))
             routers = [self.get_router(context, router_id)]
             self._add_type_and_hosting_device_info(context.elevated(),
@@ -199,7 +195,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 context, host_type)
             if p_drv is not None:
                 p_drv.teardown_logical_port_connectivity(e_context, port_db)
-            info = (super(L3_router_appliance_db_mixin, self).
+            info = (super(L3RouterApplianceDBMixin, self).
                     remove_router_interface(context, router_id,
                                             interface_info))
         l3_rpc_joint_agent_api.L3JointAgentNotify.routers_updated(
@@ -208,7 +204,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
 
     def create_floatingip(self, context, floatingip):
         with context.session.begin(subtransactions=True):
-            info = super(L3_router_appliance_db_mixin, self).create_floatingip(
+            info = super(L3RouterApplianceDBMixin, self).create_floatingip(
                 context, floatingip)
             if info['router_id']:
                 routers = [self.get_router(context, info['router_id'])]
@@ -219,11 +215,11 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         return info
 
     def update_floatingip(self, context, id, floatingip):
-        orig_fl_ip = super(L3_router_appliance_db_mixin, self).get_floatingip(
+        orig_fl_ip = super(L3RouterApplianceDBMixin, self).get_floatingip(
             context, id)
         before_router_id = orig_fl_ip['router_id']
         with context.session.begin(subtransactions=True):
-            info = super(L3_router_appliance_db_mixin, self).update_floatingip(
+            info = super(L3RouterApplianceDBMixin, self).update_floatingip(
                 context, id, floatingip)
             router_ids = []
             if before_router_id:
@@ -245,7 +241,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         floatingip_db = self._get_floatingip(context, id)
         router_id = floatingip_db['router_id']
         with context.session.begin(subtransactions=True):
-            super(L3_router_appliance_db_mixin, self).delete_floatingip(
+            super(L3RouterApplianceDBMixin, self).delete_floatingip(
                 context, id)
             if router_id:
                 routers = [self.get_router(context, router_id)]
@@ -314,10 +310,11 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                           ext_gw_change_status=None,
                           int_if_change_status=None):
         """Query routers and their related floating_ips, interfaces.
+
         Adds information about hosting device as well as trunking.
         """
         with context.session.begin(subtransactions=True):
-            sync_data = (super(L3_router_appliance_db_mixin, self).
+            sync_data = (super(L3RouterApplianceDBMixin, self).
                          get_sync_data(context, router_ids, active))
             for router in sync_data:
                 self._add_type_and_hosting_device_info(context, router)
@@ -383,6 +380,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
 
     def host_router(self, context, router_id):
         """Schedules non-hosted auto-schedulable router(s) on hosting devices.
+
         If <router_id> is given, then only the router with that id is
         scheduled (if it is non-hosted). If no <router_id> is given,
         then all non-hosted routers are scheduled.
@@ -443,6 +441,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 binding_info = self._get_router_binding_info(context,
                                                              router['id'])
         except RouterBindingInfoError:
+            LOG.error(_('DB inconsistency: No hosting info associated with'
+                        'router %s'), router['id'])
             return
         router['router_type'] = binding_info['router_type']
         router['share_host'] = binding_info['share_hosting_device']
@@ -467,8 +467,7 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 'booting_time': binding_info.hosting_device.booting_time}
 
     def _add_hosting_port_info(self, context, router, plugging_driver):
-        """Adds hosting port information to router ports.
-        """
+        """Adds hosting port information to router ports."""
         # We only populate hosting port info, i.e., reach here, if the
         # router has been scheduled to a hosting device. Hence this
         # a good place to allocate hosting ports to the router ports.
@@ -496,8 +495,6 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
                 plugging_driver)
             if h_info is None:
                 # This should not happen but just in case ...
-                LOG.error(_('Failed to allocate hosting port for port %s'),
-                          port['id'])
                 port['hosting_info'] = None
                 return None, new_allocation
             else:
@@ -524,6 +521,8 @@ class L3_router_appliance_db_mixin(extraroute_db.ExtraRoute_db_mixin):
         alloc = plugging_driver.allocate_hosting_port(
             context, router_id, port_db, network_type, hosting_device_id)
         if alloc is None:
+            LOG.error(_('Failed to allocate hosting port for port %s'),
+                      port_db['id'])
             return
         with context.session.begin(subtransactions=True):
             h_info = HostedHostingPortBinding(

@@ -299,7 +299,7 @@ class TrunkPortNetwork(model_base.BASEV2):
 class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                 external_net_db.External_net_db_mixin,
                                 l3_router_appliance_db.
-                                L3_router_appliance_db_mixin,
+                                L3RouterApplianceDBMixin,
 #                                l3_gwmode_db.L3_NAT_db_mixin,
                                 sg_db_rpc.SecurityGroupServerRpcMixin,
                                 agt_sch_db.CompositeAgentSchedulerDbMixin,

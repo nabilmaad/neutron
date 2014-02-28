@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -19,7 +17,6 @@
 from oslo.config import cfg
 from sqlalchemy.orm import joinedload
 
-from neutron.common import constants
 from neutron.db import agents_db
 from neutron.db import l3_agentschedulers_db as l3agentsched_db
 from neutron.openstack.common import log as logging
@@ -41,7 +38,9 @@ cfg.CONF.register_opts(COMPOSITE_AGENTS_SCHEDULER_OPTS)
 
 class CompositeAgentSchedulerDbMixin(l3agentsched_db.L3AgentSchedulerDbMixin):
     """Mixin class to add agent scheduler extension to db_plugin_base_v2.
-    This class also supports Cisco configuration agents."""
+
+    This class also supports Cisco configuration agents.
+    """
 
     @classmethod
     def is_agent_down(cls, heart_beat_time,
@@ -49,7 +48,7 @@ class CompositeAgentSchedulerDbMixin(l3agentsched_db.L3AgentSchedulerDbMixin):
         return timeutils.is_older_than(heart_beat_time, timeout)
 
     def auto_schedule_hosting_devices_on_cfg_agent(self, context, host,
-                                                    router_id):
+                                                   router_id):
         # There may be routers that have not been scheduled
         # on a hosting device so we try to do that now
         self.host_router(context, router_id)

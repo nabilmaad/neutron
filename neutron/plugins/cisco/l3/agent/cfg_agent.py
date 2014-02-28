@@ -176,7 +176,7 @@ class CiscoCfgAgent(manager.Manager):
         self.router_info[router_id] = ri
 
     def _router_removed(self, router_id, deconfigure=True):
-        """ Operations when a router is removed
+        """Operations when a router is removed
 
         We get a RouterInfo object corresponding to the router in the agent's
         router_info dict. If deconfigure is set to True, we remove the router's
@@ -396,7 +396,7 @@ class CiscoCfgAgent(manager.Manager):
         self.routers_updated(context, payload)
 
     def _process_routers(self, routers, all_routers=False):
-        """ Process the set of routers
+        """Process the set of routers.
 
         Iterating on the set of routers  received and comparing it with the
         set of routers already in the agent, new routers which are added are
@@ -457,7 +457,7 @@ class CiscoCfgAgent(manager.Manager):
 
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def _rpc_loop(self):
-        """ Process routers received via RPC
+        """Process routers received via RPC.
 
         This method  executes every `RPC_LOOP_INTERVAL` seconds and processes
         routers which have been notified via RPC from the plugin. Plugin sends
@@ -491,7 +491,7 @@ class CiscoCfgAgent(manager.Manager):
             self.fullsync = True
 
     def _process_router_delete(self):
-        """Process routers in the `removed_routers` set"""
+        """Process routers in the `removed_routers` set."""
         current_removed_routers = list(self.removed_routers)
         for router_id in current_removed_routers:
             self._router_removed(router_id)
@@ -563,7 +563,7 @@ class CiscoCfgAgent(manager.Manager):
         LOG.info(_("Cisco cfg agent started"))
 
     def routes_updated(self, ri):
-        """ Update the state of routes in the router
+        """Update the state of routes in the router.
 
          We compare the current routes with the existing routes configured
          and detect what was removed or added and configure the router in the

@@ -1,6 +1,4 @@
-# vim: tabstop=4 shiftwidth=4 softtabstop=4
-#
-# Copyright 2013 Cisco Systems, Inc.  All rights reserved.
+# Copyright 2014 Cisco Systems, Inc.  All rights reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
@@ -18,64 +16,75 @@
 
 from abc import ABCMeta, abstractmethod
 
+import six
 
+
+@six.add_metaclass(ABCMeta)
 class PluginSidePluggingDriver(object):
-    """This class defines the API for plugging drivers that are used by a
-       Neutron (service) plugin to perform various operations on the logical
-       ports of logical (service) resources in a plugin compatible way.
-    """
-    __metaclass__ = ABCMeta
+    """This class defines the API for plugging drivers.
 
+    These are used used by Cisco (routing service) plugin to perform
+    various operations on the logical ports of logical (service) resources
+    in a plugin compatible way.
+    """
+
+    @abstractmethod
     def create_hosting_device_resources(self, context, tenant_id, mgmt_nw_id,
                                         mgmt_sec_grp_id, max_hosted):
         """Create resources for a hosting device in a plugin specific way.
 
-           Called when a hosting device is to be created so resources like
-           networks and ports can be created for it in a plugin compatible
-           way. This is primarily useful to service VMs.
+        Called when a hosting device is to be created so resources like
+        networks and ports can be created for it in a plugin compatible
+        way. This is primarily useful to service VMs.
 
-           returns: a dict {'mgmt_port': <mgmt port or None>,
-                            'ports': <list of ports>,
-                            ... arbitrary driver items }
+        returns: a dict {'mgmt_port': <mgmt port or None>,
+                         'ports': <list of ports>,
+                         ... arbitrary driver items }
 
-           :param context: Neutron api request context.
-           :param tenant_id: id of tenant owning the hosting device resources.
-           :param mgmt_nw_id: id of management network for hosting devices.
-           :param mgmt_sec_grp_id: id of security group for management network.
-           :param max_hosted: maximum number of logical resources.
+        :param context: Neutron api request context.
+        :param tenant_id: id of tenant owning the hosting device resources.
+        :param mgmt_nw_id: id of management network for hosting devices.
+        :param mgmt_sec_grp_id: id of security group for management network.
+        :param max_hosted: maximum number of logical resources.
         """
+        pass
 
+    @abstractmethod
     def get_hosting_device_resources(self, context, id, tenant_id, mgmt_nw_id):
         """Returns information about all resources for a hosting device.
 
-           Called just before a hosting device is to be deleted so that
-           information about the resources the hosting device uses can be
-           collected.
+        Called just before a hosting device is to be deleted so that
+        information about the resources the hosting device uses can be
+        collected.
 
-           returns: a dict {'mgmt_port': <mgmt port or None>,
-                            'ports': <list of ports>,
-                            ... arbitrary driver items }
+        returns: a dict {'mgmt_port': <mgmt port or None>,
+                         'ports': <list of ports>,
+                         ... arbitrary driver items }
 
-           :param context: Neutron api request context.
-           :param id: id of hosting device.
-           :param tenant_id: id of tenant owning the hosting device resources.
-           :param mgmt_nw_id: id of management network for hosting devices.
+        :param context: Neutron api request context.
+        :param id: id of hosting device.
+        :param tenant_id: id of tenant owning the hosting device resources.
+        :param mgmt_nw_id: id of management network for hosting devices.
         """
+        pass
 
+    @abstractmethod
     def delete_hosting_device_resources(self, context, tenant_id, mgmt_port,
                                         **kwargs):
         """Deletes resources for a hosting device in a plugin specific way.
 
-           Called when a hosting device has been deleted (or when its creation
-           has failed) so resources like networks and ports can be deleted in
-           a plugin compatible way. This it primarily useful to service VMs.
+        Called when a hosting device has been deleted (or when its creation
+        has failed) so resources like networks and ports can be deleted in
+        a plugin compatible way. This it primarily useful to service VMs.
 
-           :param context: Neutron api request context.
-           :param tenant_id: id of tenant owning the hosting device resources.
-           :param mgmt_port: id of management port for the hosting device.
-           :param kwargs: dictionary for any driver specific parameters.
+        :param context: Neutron api request context.
+        :param tenant_id: id of tenant owning the hosting device resources.
+        :param mgmt_port: id of management port for the hosting device.
+        :param kwargs: dictionary for any driver specific parameters.
         """
+        pass
 
+    @abstractmethod
     def setup_logical_port_connectivity(self, context, port_db):
         """Establishes connectivity for a logical port.
 
