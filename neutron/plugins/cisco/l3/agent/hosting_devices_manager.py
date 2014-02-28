@@ -98,8 +98,6 @@ class HostingDevicesManager(object):
             hosting_device = router['hosting_device']
             _hd_id = hosting_device['id']
             _hd_type = hosting_device['host_type']
-            _hd_ip = hosting_device['ip_address']
-            _hd_port = hosting_device['port']
             # Note that we are setting  service as 'Routing' and configuration
             # protocol as 'NETCONF' as the defaults if they are not specified.
             _service_type = hosting_device.get('service_type',
@@ -107,9 +105,6 @@ class HostingDevicesManager(object):
             _config_protocol = hosting_device.get(
                 'config_protocol', cl3_constants.DEV_CFG_PROTO_NETCONF)
 
-            #Retreiving auth info from RPC or use defaults if absent
-            _hd_user = hosting_device.get('user', 'stack')
-            _hd_passwd = hosting_device.get('password', 'cisco')
             # Lookup driver based on hd_type, service and config protocol
             try:
                 driver_class = self.host_driver_binding[

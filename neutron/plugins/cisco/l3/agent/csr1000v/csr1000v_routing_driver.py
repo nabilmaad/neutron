@@ -56,9 +56,7 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
                         "CSR1000vRoutingDriver initialization"), e)
             raise CSR1000vInitializationException
 
-
     ###### Public Functions ########
-
     def router_added(self, ri):
         self._csr_create_vrf(ri)
 
@@ -317,7 +315,7 @@ class CSR1000vRoutingDriver(RoutingDriverBase):
         return None
 
     def _interface_exists(self, interface):
-        """Check whether interface exists. """
+        """Check whether interface exists."""
         ioscfg = self._get_running_config()
         parse = CiscoConfParse(ioscfg)
         intfs_raw = parse.find_lines("^interface " + interface)

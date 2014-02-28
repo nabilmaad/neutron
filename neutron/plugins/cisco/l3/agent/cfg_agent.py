@@ -541,7 +541,7 @@ class CiscoCfgAgent(manager.Manager):
             self.plugin_rpc.report_dead_hosting_devices(
                 context, hd_ids=res['dead'])
 
-    @periodic_task.periodic_task(spacing=cfg.CONF.sync_routers_task_interval)
+    @periodic_task.periodic_task
     @lockutils.synchronized('cisco-cfg-agent', 'neutron-')
     def _sync_routers_task(self, context):
         """Synchronize routers on this agent.
