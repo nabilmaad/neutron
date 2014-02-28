@@ -149,13 +149,13 @@ class TestHostingDevice(base.BaseTestCase):
         """This test simulates a hosting device which has passed the
            created time. Device is now pingable.
         """
-        #Created time : current time - 420 seconds
-        timedelta_420 = datetime.timedelta(seconds=420)
-        created_at_420sec = datetime.datetime.utcnow() - timedelta_420
-        created_at_420sec_str = created_at_420sec.strftime(
+        #Created time : current time - 430 seconds
+        timedelta_430 = datetime.timedelta(seconds=430)
+        created_at_430sec = datetime.datetime.utcnow() - timedelta_430
+        created_at_430sec_str = created_at_430sec.strftime(
             "%Y-%m-%dT%H:%M:%S.%f")
 
-        self.hosting_device['created_at'] = created_at_420sec_str
+        self.hosting_device['created_at'] = created_at_430sec_str
         hd = self.hosting_device
         hd_id = hd['id']
         self.hdm._is_pingable.return_value = True
@@ -171,14 +171,14 @@ class TestHostingDevice(base.BaseTestCase):
            time but less than the 'declared dead' time.
            Hosting device is still not pingable.
         """
-        #Created time : current time - 420 seconds
-        timedelta_420 = datetime.timedelta(seconds=420)
-        created_at_420sec = datetime.datetime.utcnow() - timedelta_420
-        created_at_420sec_str = created_at_420sec.strftime(
+        #Created time : current time - 430 seconds
+        timedelta_430 = datetime.timedelta(seconds=430)
+        created_at_430sec = datetime.datetime.utcnow() - timedelta_430
+        created_at_430sec_str = created_at_430sec.strftime(
             "%Y-%m-%dT%H:%M:%S.%f")
 
         hd = self.hosting_device
-        hd['created_at'] = created_at_420sec_str
+        hd['created_at'] = created_at_430sec_str
         #Inserted in backlog after 60 seconds
         hd['backlog_insertion_ts'] = (datetime.datetime.utcnow())
                                       # - datetime.timedelta(seconds=360))
@@ -198,16 +198,17 @@ class TestHostingDevice(base.BaseTestCase):
            Hosting device is still not pingable
         """
         #Created time: Current time - 420(Booting time) - 300(Dead time)seconds
-        timedelta_720 = datetime.timedelta(seconds=720)
-        created_at_720sec = datetime.datetime.utcnow() - timedelta_720
-        created_at_720sec_str = created_at_720sec.strftime(
+        # Calculated as 730 adding a margin of 10 seconds
+        timedelta_730 = datetime.timedelta(seconds=730)
+        created_at_730sec = datetime.datetime.utcnow() - timedelta_730
+        created_at_730sec_str = created_at_730sec.strftime(
             "%Y-%m-%dT%H:%M:%S.%f")
 
         hd = self.hosting_device
-        hd['created_at'] = created_at_720sec_str
-        #Inserted in backlog after 60 seconds
+        hd['created_at'] = created_at_730sec_str
+        #Inserted in backlog 5 seconds after booting time
         hd['backlog_insertion_ts'] = (datetime.datetime.utcnow() -
-                                      datetime.timedelta(seconds=420))
+                                      datetime.timedelta(seconds=425))
 
         hd_id = hd['id']
         self.hdm._is_pingable.return_value = False
