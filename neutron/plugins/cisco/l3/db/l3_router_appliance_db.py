@@ -28,6 +28,7 @@ from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.extensions import providernet as pr_net
 from neutron import manager
+from neutron.openstack.common import excutils
 from neutron.openstack.common import lockutils
 from neutron.openstack.common import log as logging
 from neutron.openstack.common import loopingcall
@@ -36,13 +37,14 @@ from neutron.plugins.cisco.l3.common import l3_rpc_joint_agent_api
 from neutron.plugins.cisco.l3.db import hosting_device_manager_db
 from neutron.plugins.cisco.l3.db.l3_models import HostedHostingPortBinding
 from neutron.plugins.cisco.l3.db.l3_models import RouterHostingDeviceBinding
+from neutron.plugins.cisco.l3.db.l3_models import RouterType
 
 
 LOG = logging.getLogger(__name__)
 
 
 ROUTER_APPLIANCE_OPTS = [
-    cfg.StrOpt('default_router_type', default='CSR1kv',
+    cfg.StrOpt('default_router_type', default='CSR1kv_router',
                help=_("Default type of router to create")),
     cfg.StrOpt('hosting_scheduler_driver',
                default='neutron.plugins.cisco.l3.scheduler.'
@@ -70,13 +72,25 @@ class RouterBindingInfoError(n_exc.NeutronException):
     message = _("Could not get binding information for router %(router_id)s.")
 
 
+class RouterTypeNotFound(n_exc.NeutronException):
+    message = _("Could not find router type %(router_type)s.")
+
+
+class MultipleRouterTypes(n_exc.NeutronException):
+    message = _("Multiple router type with same name %(name)s. exist. Id "
+                "must be used to.")
+
+
 class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
     """Mixin class implementing Neutron's routing service using appliances."""
 
+    # Dictionary with loaded scheduler modules for different router types
+    _router_schedulers = {}
+
     hosting_scheduler = None
 
-    # Dict of routers for which new scheduling attempts
-    # should be made and the heartbeat for that.
+    # Dictionary of routers for which new scheduling attempts should
+    # be made and the refresh setting and heartbeat for that.
     _backlogged_routers = {}
     _refresh_router_backlog = True
     _heartbeat = None
@@ -92,21 +106,21 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
     def create_router(self, context, router):
         r = router['router']
         # Bob: Hard coding router type to shared CSR1kv for now
-        r['router_type'] = cfg.CONF.default_router_type
-        r['share_host'] = True
-        if (r['router_type'] != cl3_const.NAMESPACE_ROUTER_TYPE and
+        router_type = cfg.CONF.default_router_type
+        share_host = True
+        auto_schedule = cfg.CONF.router_auto_schedule
+        if (router_type != cl3_const.NAMESPACE_ROUTER_TYPE and
                 self._dev_mgr.mgmt_nw_id() is None):
             raise RouterCreateInternalError()
         with context.session.begin(subtransactions=True):
             router_created = (super(L3RouterApplianceDBMixin, self).
                               create_router(context, router))
+            rt = self.get_router_type(context, router_type)
             r_hd_b_db = RouterHostingDeviceBinding(
                 router_id=router_created['id'],
-                router_type=r.get('router_type',
-                                  cfg.CONF.default_router_type),
-                auto_schedule=r.get('auto_schedule',
-                                    cfg.CONF.router_auto_schedule),
-                share_hosting_device=r.get('share_host', True),
+                router_type_id=rt['id'],
+                auto_schedule=auto_schedule,
+                share_hosting_device=share_host,
                 hosting_device_id=None)
             context.session.add(r_hd_b_db)
         return router_created
@@ -327,6 +341,33 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                         self._add_hosting_port_info(context, router, plg_drv)
         return sync_data
 
+    def get_router_type(self, context, id_or_name):
+        query = context.session.query(RouterType)
+        query = query.filter(RouterType.id == id_or_name)
+        try:
+            return query.one()
+        except exc.MultipleResultsFound:
+            with excutils.save_and_reraise_exception():
+                LOG.error(_('Database inconsistency: Multiple router types '
+                            'with same id %s'), id_or_name)
+                raise RouterTypeNotFound(router_type=id_or_name)
+        except exc.NoResultFound:
+            query = context.session.query(RouterType)
+            query = query.filter(RouterType.name == id_or_name)
+            try:
+                return query.one()
+            except exc.MultipleResultsFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.debug(_('Multiple router types with name %s found. '
+                                'Id must be specified to allow arbitration.'),
+                              id_or_name)
+                    raise MultipleRouterTypes(name=id_or_name)
+            except exc.NoResultFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_('No router type with name %s found.'),
+                              id_or_name)
+                    raise RouterTypeNotFound(router_type=id_or_name)
+
     @lockutils.synchronized('routers', 'neutron-')
     def backlog_router(self, router):
         if ((router or {}).get('id') is None or
@@ -369,7 +410,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
         query = context.session.query(RouterHostingDeviceBinding)
         query = query.options(joinedload('router'))
         query = query.filter(
-            RouterHostingDeviceBinding.router_type != type_to_exclude,
+            #TODO(bobmel): Filter on router type here
+#            RouterHostingDeviceBinding.router_type != type_to_exclude,
             RouterHostingDeviceBinding.hosting_device_id == None)
         for binding in query:
             router = self._make_router_dict(binding.router,
@@ -388,8 +430,9 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             return
         query = context.session.query(RouterHostingDeviceBinding)
         query = query.filter(
-            RouterHostingDeviceBinding.router_type !=
-            cl3_const.NAMESPACE_ROUTER_TYPE,
+            #TODO(bobmel): Filter on router type here
+#            RouterHostingDeviceBinding.router_type !=
+#            cl3_const.NAMESPACE_ROUTER_TYPE,
             RouterHostingDeviceBinding.auto_schedule == True,
             RouterHostingDeviceBinding.hosting_device == None)
         if router_id:
@@ -525,8 +568,8 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
             return
         with context.session.begin(subtransactions=True):
             h_info = HostedHostingPortBinding(
-                router_id=router_id,
-                router_port_id=port_db['id'],
+                logical_resource_id=router_id,
+                logical_port_id=port_db['id'],
                 network_type=network_type,
                 hosting_port_id=alloc['allocated_port_id'],
                 segmentation_tag=alloc['allocated_vlan'])
@@ -549,3 +592,17 @@ class L3RouterApplianceDBMixin(extraroute_db.ExtraRoute_db_mixin):
                     return p
         except exc.NoResultFound:
             return
+
+    def _get_router_type_scheduler(self, context, id):
+        """Returns the scheduler (instance) for a router type."""
+        try:
+            return self._router_schedulers[id]
+        except KeyError:
+            try:
+                router_type = self.get_router_type(context, id)
+                self._router_schedulers[id] = importutils.import_object(
+                    router_type['scheduler'])
+            except (ImportError, TypeError, n_exc.NeutronException):
+                LOG.exception(_("Error loading scheduler for router type %s"),
+                              id)
+            return self._router_schedulers.get(id)

@@ -25,14 +25,14 @@ HARDWARE_CATEGORY = 'Hardware'
 
 # Hosting device is of one of the following types.
 NETWORK_NODE_HOST = 'NetworkNamespaceNode'
-CSR1KV_HOST = 'CSR1kv'
+CSR1KV_HOST = 'CSR1kv_template'
 NEXUS3K_HOST = 'Nexus_3k'
 
 # Router type is a new attribute for OsN Router
 # It can be set in Create operation then just Read.
 # Router type is instead changed by moving the
 # router to a hosting device of another type.
-CSR_ROUTER_TYPE = 'CSR1kv'
+CSR_ROUTER_TYPE = 'CSR1kv_router'
 NAMESPACE_ROUTER_TYPE = 'NetworkNamespace'
 HARDWARE_ROUTER_TYPE = 'Hardware'
 

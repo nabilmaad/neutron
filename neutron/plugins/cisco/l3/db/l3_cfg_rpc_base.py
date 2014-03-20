@@ -84,7 +84,7 @@ class L3CfgRpcCallbackMixin(object):
             plugin.update_port(context, port['id'],
                                {'port': {portbindings.HOST_ID: host}})
 
-    #TODO(bobmel): Check with Hareesh if we need this function
+
     def get_external_network_id(self, context, **kwargs):
         """Get one external network id for cfg agent.
 
@@ -98,6 +98,7 @@ class L3CfgRpcCallbackMixin(object):
                   net_id)
         return net_id
 
+    #TODO(bobmel): This callback should be handled by hosting device mgr
     def report_non_responding_hosting_devices(self, context, **kwargs):
         """Report that a hosting device cannot be contacted.
 

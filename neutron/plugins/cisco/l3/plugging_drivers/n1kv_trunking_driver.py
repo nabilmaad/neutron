@@ -454,7 +454,7 @@ class N1kvTrunkingPlugDriver(plug.PluginSidePluggingDriver):
         query = context.session.query(models_v2.Port)
         query = query.join(
             HostedHostingPortBinding,
-            models_v2.Port.id == HostedHostingPortBinding.router_port_id)
+            models_v2.Port.id == HostedHostingPortBinding.logical_port_id)
         query = query.filter(models_v2.Port.device_id == router_id)
         if device_owner is not None:
             query = query.filter(models_v2.Port.device_owner == device_owner)

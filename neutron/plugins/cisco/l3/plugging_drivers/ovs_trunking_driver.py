@@ -65,7 +65,7 @@ class OvsTrunkingPlugDriver(n1kv_trunking_driver.N1kvTrunkingPlugDriver):
                 sub_spec = {'subnet': {
                     'tenant_id': tenant_id,
                     'admin_state_up': True,
-                    'cidr': n1kv_const.SUB_PREFX,
+                    'cidr': n1kv_const.SUBNET_PREFIX,
                     'enable_dhcp': False,
                     'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
                     'allocation_pools': attributes.ATTR_NOT_SPECIFIED,

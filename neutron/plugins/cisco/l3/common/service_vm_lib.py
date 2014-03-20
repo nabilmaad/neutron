@@ -68,11 +68,11 @@ class ServiceVMManager:
             status = constants.SVM_ERROR
         return status
 
-#    def dispatch_service_vm_dis(self, context, instance_name, vm_image,
-#                                vm_flavor, hosting_device_drv, mgmt_port,
-#                                ports=None):
-    def dispatch_service_vm(self, context, instance_name, vm_image, vm_flavor,
-                            hosting_device_drv, mgmt_port, ports=None):
+    def dispatch_service_vm_dis(self, context, instance_name, vm_image,
+                                vm_flavor, hosting_device_drv, mgmt_port,
+                                ports=None):
+#    def dispatch_service_vm(self, context, instance_name, vm_image, vm_flavor,
+#                            hosting_device_drv, mgmt_port, ports=None):
         nics = [{'port-id': mgmt_port['id']}]
         for port in ports:
             nics.append({'port-id': port['id']})
@@ -111,10 +111,10 @@ class ServiceVMManager:
             return None
         return {'id': server.id}
 
-#    def delete_service_vm_dis(self, context, vm_id, hosting_device_drv,
-#                              mgmt_nw_id):
-    def delete_service_vm(self, context, vm_id, hosting_device_drv,
-                          mgmt_nw_id):
+    def delete_service_vm_dis(self, context, vm_id, hosting_device_drv,
+                              mgmt_nw_id):
+#    def delete_service_vm(self, context, vm_id, hosting_device_drv,
+#                          mgmt_nw_id):
         result = True
         # Get ports on management network (should be only one)
         ports = self._core_plugin.get_ports(
@@ -139,11 +139,11 @@ class ServiceVMManager:
 
     # TODO(bobmel): Move this to fake_service_vm_lib.py file
     # with FakeServiceVMManager
-#    def dispatch_service_vm(self, context, instance_name, vm_image, vm_flavor,
-#                            hosting_device_drv, mgmt_port, ports=None):
-    def dispatch_service_vm_fake(self, context, instance_name, vm_image,
-                                 vm_flavor, hosting_device_drv, mgmt_port,
-                                 ports=None):
+    def dispatch_service_vm(self, context, instance_name, vm_image, vm_flavor,
+                            hosting_device_drv, mgmt_port, ports=None):
+#    def dispatch_service_vm_fake(self, context, instance_name, vm_image,
+#                                 vm_flavor, hosting_device_drv, mgmt_port,
+#                                 ports=None):
         vm_id = uuidutils.generate_uuid()
 
         try:
@@ -153,7 +153,7 @@ class ServiceVMManager:
                 context, mgmt_port)
             files = dict((label, open(name)) for label, name in
                          cfg_files.items())
-            LOG.info(_('Created files %(files)s with label %(label)s for '
+            LOG.info(_('Created files %(files)s with labels %(keys)s for '
                        'config drive'),
                      {'files': cfg_files.values(), 'keys': files.keys()})
         except IOError:
@@ -180,10 +180,10 @@ class ServiceVMManager:
 
         return myserver['server']
 
-#    def delete_service_vm(self, context, vm_id, hosting_device_drv,
-#                          mgmt_nw_id):
-    def delete_service_vm_fake(self, context, vm_id, hosting_device_drv,
-                               mgmt_nw_id):
+    def delete_service_vm(self, context, vm_id, hosting_device_drv,
+                          mgmt_nw_id):
+#    def delete_service_vm_fake(self, context, vm_id, hosting_device_drv,
+#                               mgmt_nw_id):
         result = True
         # Get ports on management network (should be only one)
         ports = self._core_plugin.get_ports(

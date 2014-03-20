@@ -31,13 +31,40 @@ from neutron import wsgi
 LOG = logging.getLogger(__name__)
 
 
-NAME = 'cisco_router'
-TYPE = NAME + ':type'
+NAME = 'router_type'
+TYPE = NAME + ':id'
 ROUTER_TYPES = TYPE + 's'
 
 EXTENDED_ATTRIBUTES_2_0 = {
+    ROUTER_TYPES: {
+        'id': {'allow_post': False, 'allow_put': False,
+               'validate': {'type:uuid': None},
+               'is_visible': True,
+               'primary_key': True},
+        'name': {'allow_post': True, 'allow_put': True,
+                 'validate': {'type:string': None},
+                 'is_visible': True, 'default': ''},
+        'description': {'allow_post': True, 'allow_put': True,
+                        'validate': {'type:string': None},
+                        'is_visible': True, 'default': ''},
+        'template_id': {'allow_post': True, 'allow_put': False,
+                        'validate': {'type:uuid': None},
+                        'is_visible': True},
+        'slot_need': {'allow_post': True, 'allow_put': True,
+                      'required_by_policy': True,
+                      'validate': {'type:non_negative': None},
+                      'is_visible': True},
+        'scheduler': {'allow_post': True, 'allow_put': False,
+                      'required_by_policy': True,
+                      'validate': {'type:string': None},
+                      'is_visible': True},
+        'cfg_agent_driver': {'allow_post': True, 'allow_put': False,
+                             'required_by_policy': True,
+                             'validate': {'type:string': None},
+                             'is_visible': True},
+    },
     'routers': {
-        TYPE: {'allow_post': True, 'allow_put': False,
+        TYPE: {'allow_post': True, 'allow_put': True,
                'validate': {'type:string': None},
                'default': attributes.ATTR_NOT_SPECIFIED,
                'is_visible': True},
@@ -49,16 +76,16 @@ class RouterTypeController(wsgi.Controller):
     def get_plugin(self):
         plugin = manager.NeutronManager.get_service_plugins().get(
             service_constants.L3_ROUTER_NAT)
-        if not plugin:
+        if not plugin or not utils.is_extension_supported(plugin, NAME):
             LOG.error(_('No plugin for L3 routing registered to handle '
-                        'router scheduling'))
+                        'router type resources'))
             msg = _('The resource could not be found.')
             raise webob.exc.HTTPNotFound(msg)
         return plugin
 
     def index(self, request, **kwargs):
         plugin = self.get_plugin()
-        return plugin.list_router_types(request.context, kwargs['router_id'])
+        return plugin.get_router_types(request.context, **kwargs)
 
 
 class Router_type(extensions.ExtensionDescriptor):
@@ -67,15 +94,15 @@ class Router_type(extensions.ExtensionDescriptor):
     This class is used by Neutron's extension framework to support
     definition of different types of Neutron Routers.
 
-    Attribute 'router_type' is a string name representing a certain
-    router type. It can be set during creation of Neutron router.
-    If a Neutron router is moved to a hosting device of a different
-    hosting device type, the router type of the Neutron router will
-    also change.
+    Attribute 'router_type:id' is the uuid or name of a certain router type.
+    It can be set during creation of Neutron router. If a Neutron router is
+    moved (by admin user) to a hosting device of a different hosting device
+    type, the router type of the Neutron router will also change. Non-admin
+    users can request that a Neutron router's type is changed.
 
     To create a router of router type <name>:
 
-       (shell) router-create <router_name> --cisco_router:type <name>
+       (shell) router-create <router_name> --router_type:id <uuid_or_name>
     """
 
     @classmethod
@@ -147,15 +174,7 @@ class RouterTypePluginBase(object):
     """
 
     @abstractmethod
-    def list_router_types(self, context):
-        """Lists defined router types. For request in admin context
-           hosting_device_template_id is included in response.
-        """
-        pass
-
-    @abstractmethod
-    def create_router_type(self, context, type_name,
-                           hosting_device_template_id):
+    def create_router_type(self, context, router_type):
         """Creates a router type.
 
          Also binds it to the specified hosting device template.
@@ -163,6 +182,23 @@ class RouterTypePluginBase(object):
         pass
 
     @abstractmethod
-    def delete_router_type(self, context, type_name):
+    def update_router_type(self, context, router_type):
+        """Updates a router type."""
+        pass
+
+    @abstractmethod
+    def delete_router_type(self, context, id):
         """Deletes a router type."""
+        pass
+
+    @abstractmethod
+    def get_router_type(self, context, id, fields=None):
+        """Lists defined router types."""
+        pass
+
+    @abstractmethod
+    def get_router_types(self, context, filters=None, fields=None,
+                         sorts=None, limit=None, marker=None,
+                         page_reverse=False):
+        """Lists defined router types."""
         pass

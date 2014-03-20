@@ -27,6 +27,7 @@ from sqlalchemy.orm import exc
 from sqlalchemy.orm import joinedload
 
 
+from neutron.common import exceptions as n_exc
 from neutron.common import utils
 from neutron import context as neutron_context
 from neutron import manager
@@ -61,6 +62,9 @@ HOSTING_DEVICE_MANAGER_OPTS = [
     cfg.IntOpt('max_routers_per_csr1kv', default=1,
                help=_("The maximum number of logical routers a CSR1kv VM. "
                       "instance should host. Default value is 1")),
+    cfg.IntOpt('csr1kv_slot_capacity', default=1,
+               help=_("The number of slots a CSR1kv VM instance has. Default "
+                      "value is 10")),
     cfg.IntOpt('csr1kv_booting_time', default=420,
                help=_("The time in seconds it typically takes to boot a "
                       "CSR1kv VM into operational state. Default value "
@@ -72,6 +76,15 @@ HOSTING_DEVICE_MANAGER_OPTS = [
 ]
 
 cfg.CONF.register_opts(HOSTING_DEVICE_MANAGER_OPTS)
+
+
+class HostingDeviceTemplateNotFound(n_exc.NeutronException):
+    message = _("Could not find hosting device template %(template)s.")
+
+
+class MultipleHostingDeviceTemplates(n_exc.NeutronException):
+    message = _("Multiple hosting device templates with same name %(name)s. "
+                "exist. Id must be used to.")
 
 
 class HostingDeviceManager(object):
@@ -91,15 +104,14 @@ class HostingDeviceManager(object):
     _plugging_drivers = {}
     _hosting_device_drivers = {}
 
-    # Slot counters for resource management
-    _slots = {cl3_const.CSR1KV_HOST: {
-        # rlock to control thread access
-        'lock': threading.RLock(),
-        # 'available' only count tenant unbound slots
-        'available': -1,
-        # number of tenant unbound slots to keep available
-        'desired': cfg.CONF.max_routers_per_csr1kv *
-        cfg.CONF.standby_pool_size}}
+    # Dictionary of slot counter (dictionaries) for resource management:
+    #  { <template_id1>: {
+    #      'lock': threading.RLock(),
+    #      'available': <int>,   # 'available' only count tenant unbound slots
+    #      'desired': <int> # number of tenant unbound slots to keep available
+    #    },
+    #    <template_id2>: ...}
+    _slots = {}
 
     # Dictionary of hosting device capacity
     _capacity = {}
@@ -114,13 +126,10 @@ class HostingDeviceManager(object):
         self._svc_vm_mgr = service_vm_lib.ServiceVMManager(
             user=u_name, passwd=pw, l3_admin_tenant=tenant, auth_url=auth_url)
         self._gt_pool = eventlet.GreenPool()
-        #TODO(bobmel): determine host_types from DB
-        templates = [{'host_type': cl3_const.CSR1KV_HOST,
-                      'host_category': cl3_const.VM_CATEGORY}]
-        for item in templates:
-            self.report_hosting_device_shortage(
-                neutron_context.get_admin_context(), item['host_type'],
-                item['host_category'])
+        # initialize hosting device pools
+        ctx = neutron_context.get_admin_context()
+        for template in ctx.session.query(HostingDeviceTemplate):
+            self.report_hosting_device_shortage(ctx, template)
 
     @classmethod
     def get_instance(cls):
@@ -131,6 +140,7 @@ class HostingDeviceManager(object):
 
     @classmethod
     def l3_tenant_id(cls):
+        """Returns id of tenant owning hosting device resources."""
         if cls._l3_tenant_uuid is None:
             auth_url = (cfg.CONF.keystone_authtoken.auth_protocol + "://" +
                         cfg.CONF.keystone_authtoken.auth_host + ":" +
@@ -154,6 +164,7 @@ class HostingDeviceManager(object):
 
     @classmethod
     def mgmt_nw_id(cls):
+        """Returns id of the management network."""
         if cls._mgmt_nw_uuid is None:
             tenant_id = cls.l3_tenant_id()
             if not tenant_id:
@@ -185,8 +196,9 @@ class HostingDeviceManager(object):
 
     @classmethod
     def mgmt_sec_grp_id(cls):
-        if not utils.is_extension_supported(cls._core_plugin,
-                                            "security-group"):
+        """Returns id of security group used by the management network."""
+        if not utils.is_extension_supported(
+                manager.NeutronManager.get_plugin(), "security-group"):
             return None
         if cls._mgmt_sec_grp_id is None:
             # Get the id for the _mgmt_security_group_id
@@ -210,73 +222,72 @@ class HostingDeviceManager(object):
                             'network. Please create one.'))
         return cls._mgmt_sec_grp_id
 
-    def get_hosting_device_driver(self, context, host_type):
-        """Returns the driver for host_type hosting devices."""
+    def get_hosting_device_driver(self, context, id):
+        """Returns device driver for hosting device template with <id>."""
         try:
-            return self._hosting_device_drivers[host_type]
+            return self._hosting_device_drivers[id]
         except KeyError:
             try:
-                template = (self.get_hosting_device_template(
-                    context, host_type) or {})
-                self._hosting_device_drivers[host_type] = (
-                    importutils.import_object(template.get('device_driver')))
-            except ImportError:
-                with excutils.save_and_reraise_exception():
-                    LOG.exception(_("Error loading hosting device driver "
-                                    "%(driver)s for host type %(host_type)s"),
-                                  {'driver': template.get('device_driver'),
-                                   'host_type': host_type})
-            return self._hosting_device_drivers[host_type]
+                template = self.get_hosting_device_template(context, id)
+                self._hosting_device_drivers[id] = importutils.import_object(
+                    template['device_driver'])
+            except (ImportError, TypeError, n_exc.NeutronException):
+                LOG.exception(_("Error loading hosting device driver for "
+                                "hosting device template %s"), id)
+            return self._hosting_device_drivers.get(id)
 
-    def get_hosting_device_plugging_driver(self, context, host_type):
-        """Returns the plugging driver for a host_type hosting device."""
+    def get_hosting_device_plugging_driver(self, context, id):
+        """Returns  plugging driver for hosting device template with <id>."""
         try:
-            return self._plugging_drivers[host_type]
+            return self._plugging_drivers[id]
         except KeyError:
             try:
-                template = (self.get_hosting_device_template(
-                    context, host_type) or {})
-                self._plugging_drivers[host_type] = importutils.import_object(
-                    template.get('plugging_driver'))
-            except ImportError:
-                with excutils.save_and_reraise_exception():
-                    LOG.exception(_("Error loading plugging driver %(driver)s "
-                                    "for host type %(host_type)s"),
-                                  {'driver': template.get('plugging_driver'),
-                                   'host_type': host_type})
-            return self._plugging_drivers[host_type]
+                template = self.get_hosting_device_template(context, id)
+                self._plugging_drivers[id] = importutils.import_object(
+                    template['plugging_driver'])
+            except (ImportError, TypeError, n_exc.NeutronException):
+                LOG.exception(_("Error loading plugging driver for hosting "
+                                "device template %s"), id)
+            return self._plugging_drivers.get(id)
 
-    def get_hosting_device_capacity(self, context, host_type):
-        """Returns the slot capacity host_type hosting devices have."""
-        try:
-            return self._capacity[host_type]
-        except KeyError:
-            template = (self.get_hosting_device_template(context, host_type) or
-                        {})
-            capacity = {}
-            try:
-                for spec in template.get('capacity', "").split(','):
-                    resource, num = spec.split(':')
-                    capacity['num_' + resource + 's'] = int(num)
-            except ValueError:
-                LOG.exception(_("Error parsing capacity specification: "
-                                "%(capacity)s for host type %(host_type)s"),
-                              {'capacity': template.get('capacity'),
-                               'host_type': host_type})
-                capacity = {}
-            if not capacity:
-                return
-            self._capacity[host_type] = capacity
-            return capacity
+#    def get_hosting_device_capacity(self, context, id):
+#     def get_hosting_device_capacity(self, context, host_type):
+#         """Returns the slot capacity host_type hosting devices have."""
+#         try:
+#             return self._capacity[host_type]
+#         except KeyError:
+#             template = (self.get_hosting_device_template(context, host_type) or
+#                         {})
+#             capacity = {}
+#             try:
+#                 for spec in template.get('capacity', "").split(','):
+#                     resource, num = spec.split(':')
+#                     capacity['num_' + resource + 's'] = int(num)
+#             except ValueError:
+#                 LOG.exception(_("Error parsing capacity specification: "
+#                                 "%(capacity)s for host type %(host_type)s"),
+#                               {'capacity': template.get('capacity'),
+#                                'host_type': host_type})
+#                 capacity = {}
+#             if not capacity:
+#                 return
+#             self._capacity[host_type] = capacity
+#             return capacity
 
-    def report_hosting_device_shortage(self, context, host_type, category):
+#    def report_hosting_device_shortage(self, context, host_type, category):
+    def report_hosting_device_shortage(self, context, template):
+        """Used to report shortage of hosting devices based on <template>."""
         # safety net: synchronize counters to ensure correct values
-        if host_type == cl3_const.CSR1KV_HOST:
-            self._sync_hosting_device_pool_counters(context, host_type)
-            mgr_context = neutron_context.get_admin_context()
-            self._gt_pool.spawn_n(self._maintain_hosting_device_pool,
-                                  mgr_context, host_type, category)
+#        if host_type == cl3_const.CSR1KV_HOST:
+#        self._sync_hosting_device_pool_counters(context, host_type)
+        self._sync_hosting_device_pool_counters(context, template)
+        mgr_context = neutron_context.get_admin_context()
+        self._gt_pool.spawn_n(self._maintain_hosting_device_pool, mgr_context,
+                              template)
+#                              mgr_context, host_type, category)
 
+#    def acquire_hosting_device_slots(self, context, hosting_device, id, num):
+#    """Allocates <num> slots in <hosting_device> to logical resource <id>."""
     def acquire_hosting_device_slot(self, context, router, hosting_device):
         with context.session.begin(subtransactions=True):
             if hosting_device is None:
@@ -310,6 +321,8 @@ class HostingDeviceManager(object):
                                       mgr_context, host_type, category)
         return True
 
+#    def release_hosting_device_slots(self, context, hosting_device, id, num):
+#    """Returns <num> slots in <hosting_device> from logical resource <id>."""
     def release_hosting_device_slot(self, context, hosting_device):
         with context.session.begin(subtransactions=True):
             if hosting_device is None:
@@ -354,6 +367,7 @@ class HostingDeviceManager(object):
         return True
 
     def get_hosting_devices(self, context, hosting_device_ids):
+        """Returns hosting devices with <hosting_device_ids>."""
         query = context.session.query(HostingDevice)
         if len(hosting_device_ids) > 1:
             query = query.options(joinedload('cfg_agent')).filter(
@@ -363,58 +377,61 @@ class HostingDeviceManager(object):
                 HostingDevice.id == hosting_device_ids[0])
         return query.all()
 
-    def get_hosting_device_template(self, context, host_type):
-        # TODO(bobmel): This should NOT be hard coded to the CSR1kv
-        return {'id': '11111111-2222-3333-4444-555555555555',
-                'tenant_id': self.l3_tenant_id(),
-                'name': 'CSR1kv',
-                'enabled': True,
-                'host_category': cl3_const.VM_CATEGORY,
-                'host_type': cl3_const.CSR1KV_HOST,
-                'service_types': 'router',
-                'image': cfg.CONF.csr1kv_image,
-                'flavor': cfg.CONF.csr1kv_flavor,
-                'configuration_mechanism': 'Netconf',
-                'transport_port': cl3_const.CSR1kv_SSH_NETCONF_PORT,
-                'booting_time': cfg.CONF.csr1kv_booting_time,
-                'capacity': 'router:' + str(cfg.CONF.max_routers_per_csr1kv),
-                'tenant_bound': None,
-                'device_driver': 'neutron.plugins.cisco.l3.hosting_device_'
-                                 'drivers.csr1kv_hd_driver.'
-                                 'CSR1kvHostingDeviceDriver',
-                'plugging_driver': 'neutron.plugins.cisco.l3.plugging_drivers.'
-                                   'n1kv_trunking_driver.'
-                                   'N1kvTrunkingPlugDriver',
-                'cfg_agent_driver': 'router:neutron.plugins.cisco.l3.agent.'
-                                    'csr1000v.cisco_csr_network_driver.'
-                                    'CiscoCSRDriver',
-                'schedulers': 'router:neutron.plugins.cisco.l3.scheduler.XXX.'
-                              'YYY'
-                }
+    # def get_hosting_device_template(self, context, host_type):
+    #     query = context.session.query(HostingDeviceTemplate)
+    #     query = query.filter(HostingDeviceTemplate.host_type == host_type)
+    #     try:
+    #         return query.one()
+    #     except exc.MultipleResultsFound:
+    #         LOG.debug(_('Multiple hosting device templates with same host '
+    #                     'type %s. Please remove duplicates to ensure '
+    #                     'uniqueness.'), host_type)
+    #         return
+    #     except exc.NoResultFound:
+    #         LOG.error(_('No hosting device templates with host type %s '
+    #                     'found.'), host_type)
+    #         return
+
+    def get_hosting_device_template(self, context, id_or_name):
+        """Returns hosting device template with specified <id_or_name>."""
         query = context.session.query(HostingDeviceTemplate)
-        query = query.filter(HostingDevice.host_type == host_type)
+        query = query.filter(HostingDeviceTemplate.id == id_or_name)
         try:
             return query.one()
         except exc.MultipleResultsFound:
-            LOG.debug(_('Multiple hosting device templates with same host '
-                        'type %s. Please remove duplicates to ensure '
-                        'uniqueness.'), host_type)
-            return
+            with excutils.save_and_reraise_exception():
+                LOG.error(_('Database inconsistency: Multiple hosting device '
+                            'templates with same id %s'), id_or_name)
+                raise HostingDeviceTemplateNotFound(template=id_or_name)
         except exc.NoResultFound:
-            LOG.error(_('No hosting device templates with host type %s '
-                        'found.'), host_type)
-            return
+            query = context.session.query(HostingDeviceTemplate)
+            query = query.filter(HostingDeviceTemplate.name == id_or_name)
+            try:
+                return query.one()
+            except exc.MultipleResultsFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.debug(_('Multiple hosting device templates with name '
+                                '%s found. Id must be specified to allow '
+                                'arbitration.'), id_or_name)
+                    raise MultipleHostingDeviceTemplates(name=id_or_name)
+            except exc.NoResultFound:
+                with excutils.save_and_reraise_exception():
+                    LOG.error(_('No hosting device template with name %s '
+                                'found.'), id_or_name)
+                    raise HostingDeviceTemplateNotFound(template=id_or_name)
 
-    def delete_all_service_vm_hosting_devices(self, context, host_type):
+#    def delete_all_service_vm_hosting_devices(self, context, host_type):
+    def delete_all_service_vm_hosting_devices(self, context, template):
+        """Deletes all hosting devices based on <template>."""
         with context.session.begin(subtransactions=True):
             plugging_drv = self.get_hosting_device_plugging_driver(
-                context, host_type)
-            hosting_device_drv = self.get_hosting_device_driver(
-                context, host_type)
+                context, template['id'])
+            hosting_device_drv = self.get_hosting_device_driver(context,
+                                                                template['id'])
             if plugging_drv is None or hosting_device_drv is None:
                 return
             query = context.session.query(HostingDevice)
-            query = query.filter(HostingDevice.host_type == host_type)
+            query = query.filter(HostingDevice.template_id == template['id'])
             for hd in query:
                 res = plugging_drv.get_hosting_device_resources(
                     context, hd.id, self.l3_tenant_id(), self.mgmt_nw_id())
@@ -424,10 +441,10 @@ class HostingDeviceManager(object):
                     context, self.l3_tenant_id(), **res)
                 context.session.delete(hd)
             # Adjust pool counters, easiest is to just re-sync.
-            self._sync_hosting_device_pool_counters(context, host_type)
+            self._sync_hosting_device_pool_counters(context, template)
 
-    def process_non_responsive_hosting_device(
-            self, context, hosting_device, logical_resource_ids):
+    def process_non_responsive_hosting_device(self, context, hosting_device,
+                                              logical_resource_ids):
         """Host type specific processing of non responsive hosting devices.
 
         :param hosting_device: db object for hosting device
@@ -450,55 +467,60 @@ class HostingDeviceManager(object):
         if cls._instance is None:
             cls._instance = cls()
 
-    def _get_slots_counters(self, host_type):
-        return self._slots.get(host_type)
+    def _get_slots_counters(self, template_id):
+        try:
+            return self._slots[template_id]
+        except KeyError:
+            try:
+                t = self.get_hosting_device_template(
+                    neutron_context.get_admin_context(), template_id)
+                self._slots[template_id] = {
+                    'lock': threading.RLock(),
+                    'available': -1,
+                    'desired': t['desired_slots_free']}
+            except:
+                LOG.debug(_('Slot counter request for non-existent '
+                            'hosting device template %s ignored.'),
+                          template_id)
+                return
+        return self._slots[template_id]
 
-    def _sync_hosting_device_pool_counters(self, context, host_type):
-        # mysql> SELECT COUNT(id) FROM hostingdevices
-        # WHERE host_type='CSR1kv' AND tenant_bound IS NULL;
-        slots = self._get_slots_counters(host_type)
-        capacity = (self.get_hosting_device_capacity(context, host_type) or
-                    {}).get('num_routers')
-        if slots is None or capacity is None:
+    def _sync_hosting_device_pool_counters(self, context, template):
+        """Synchronize pool counters for <template> with database."""
+        slots = self._get_slots_counters(template['id'])
+        if slots is None:
             return
         with slots['lock']:
-            query = context.session.query(func.count(HostingDevice.id))
-            query = query.filter(and_(HostingDevice.host_type == host_type,
-                                      HostingDevice.admin_state_up == True,
-                                      HostingDevice.tenant_bound == None))
-            non_tenant_bound_he = query.scalar()
+            # mysql> SELECT SUM(allocated_slots), COUNT(id) FROM
+            # hostingdevices WHERE template_id=<id> AND
+            # admin_state_up = TRUE AND tenant_bound IS NULL;
+            query = context.session.query(
+                func.sum(HostingDevice.allocated_slots),
+                func.count(HostingDevice.id))
+            query = query.filter(HostingDevice.template_id == template['id'],
+                                 HostingDevice.admin_state_up == True,
+                                 HostingDevice.tenant_bound == None)
+            (allocated, num_devices) = query.one()
+            slots['available'] = (template['slot_capacity'] * num_devices -
+                                  (allocated or 0))
+            slots['desired'] = template['desired_slots_free']
 
-            #mysql> SELECT hostingdevices.id FROM hostingdevices AS he
-            # JOIN routerhostingentitybindings AS rhe
-            # ON he.id = rhe.hosting_device_id
-            # WHERE he.host_type = 'CSR1kv' AND he.tenant_bound IS NULL
-
-            query = context.session.query(HostingDevice.id).join(
-                RouterHostingDeviceBinding,
-                HostingDevice.id ==
-                RouterHostingDeviceBinding.hosting_device_id)
-            query = query.filter(and_(HostingDevice.host_type == host_type,
-                                      HostingDevice.admin_state_up == True,
-                                      HostingDevice.tenant_bound == None))
-            n_used_slots = query.count()
-            slots['available'] = capacity * non_tenant_bound_he - n_used_slots
-
-    def _maintain_hosting_device_pool(self, context, host_type, host_category):
-        """Maintains the pool of host_type hosting devices.
+    def _maintain_hosting_device_pool(self, context, template):
+        """Maintains the pool of hosting devices that are based on <template>.
 
         Ensures that the number of standby hosting devices (essentially
         service VMs) is kept at a suitable level so that resource creation is
         not slowed down by booting of the hosting device.
         """
         # For now the pool size is only elastic for service VMs.
-        if host_category == cl3_const.HARDWARE_CATEGORY:
+        if template['host_category'] == cl3_const.HARDWARE_CATEGORY:
             return
         # Maintain a pool of approximately _desired_svc_vm_slots =
         #     capacity * standby_pool_size
         # slots available for use.
         # Approximately means _avail_svc_vm_slots =
-        #         [ _desired_svc_vm_slots - capacity,
-        #           _desired_svc_vm_slots - capacity ]
+        #         [ max(0, _desired_svc_vm_slots - capacity),
+        #           _desired_svc_vm_slots + capacity ]
         #
         # Spin-up VM condition: _service_vm_slots < _desired_svc_vm_slots
         # Resulting increase of available slots:
@@ -506,17 +528,16 @@ class HostingDeviceManager(object):
         # Delete VM condition: _service_vm_slots < _desired_svc_vm_slots
         # Resulting reduction of available slots:
         #     _avail_svc_vm_slots - capacity
-        slots = self._get_slots_counters(host_type)
-        capacity = (self.get_hosting_device_capacity(context, host_type) or
-                    {}).get('num_routers')
-        if slots is None or capacity is None:
+        slots = self._get_slots_counters(template['id'])
+        capacity = template['slot_capacity']
+        if slots is None or slots['desired'] is None or capacity is None:
             return
         with slots['lock']:
-            if slots['available'] <= slots['desired'] - capacity:
+            if slots['available'] <= max(0, slots['desired'] - capacity):
                 num_req = int(math.ceil((
                     slots['desired'] - slots['available']) / (1.0 * capacity)))
                 num_created = len(self._create_svc_vm_hosting_devices(
-                    context, num_req, host_type))
+                    context, num_req, template))
                 if num_created < num_req:
                     LOG.warn(_('Requested %(requested)d service VMs but only'
                                ' %(created)d could be created'),
@@ -526,36 +547,35 @@ class HostingDeviceManager(object):
                 num_req = int(math.ceil((
                     slots['available'] - slots['desired']) / (1.0 * capacity)))
                 num_deleted = self._delete_unused_service_vm_hosting_devices(
-                    context, num_req, host_type)
+                    context, num_req, template)
                 if num_deleted < num_req:
                     LOG.warn(_('Tried to delete %(requested)d service VMs '
                                'but only %(deleted)d could be deleted'),
                              {'requested': num_req, 'deleted': num_deleted})
                 slots['available'] -= (num_deleted * capacity)
 
-    def _create_svc_vm_hosting_devices(self, context, num, host_type,
+    def _create_svc_vm_hosting_devices(self, context, num, template,
                                        tenant_bound=None):
-        """Creates a number of service VM instances.
+        """Creates <num> or less service VM instances based on <template>.
 
         These hosting devices can be bound to a certain tenant or for shared
         use. A list with the created hosting device VMs is returned.
         """
         hosting_devices = []
-        plugging_drv = self.get_hosting_device_plugging_driver(
-            context, host_type)
-        hosting_device_drv = self.get_hosting_device_driver(context, host_type)
-        capacity = (self.get_hosting_device_capacity(context, host_type) or
-                    {}).get('num_routers')
-        template = self.get_hosting_device_template(context, host_type)
-        if (plugging_drv is None or hosting_device_drv is None or
-                capacity is None):
+        plugging_drv = self.get_hosting_device_plugging_driver(context,
+                                                               template['id'])
+        hosting_device_drv = self.get_hosting_device_driver(context,
+                                                            template['id'])
+        if plugging_drv is None or hosting_device_drv is None:
             return hosting_devices
         # These resources are owned by the L3AdminTenant
         birth_date = timeutils.utcnow()
+        #TODO(bobmel): Determine value for max_hosted properly
+        max_hosted = 1#template['slot_capacity']
         for i in xrange(num):
             res = plugging_drv.create_hosting_device_resources(
                 context, self.l3_tenant_id(), self.mgmt_nw_id(),
-                self.mgmt_sec_grp_id(), capacity)
+                self.mgmt_sec_grp_id(), max_hosted)
             if res.get('mgmt_port') is None:
                 # Required ports could not be created
                 return hosting_devices
@@ -570,9 +590,11 @@ class HostingDeviceManager(object):
                     hd_db = HostingDevice(
                         id=hosting_device['id'],
                         tenant_id=self.l3_tenant_id(),
+                        template_id=template['id'],
+                        credential_id=None,
+                        device_id=None,
+                        allocated_slots=0,
                         admin_state_up=True,
-                        host_type=template['host_type'],
-                        host_category=template['host_category'],
                         ip_address=mgmt_port['fixed_ips'][0]['ip_address'],
                         transport_port=template['transport_port'],
                         cfg_agent_id=None,
@@ -591,26 +613,27 @@ class HostingDeviceManager(object):
         return hosting_devices
 
     def _delete_unused_service_vm_hosting_devices(
-            self, context, num, host_type, tenant_bound=None):
-        """Deletes <num> or less unused host_type service VM instances.
+            self, context, num, template, tenant_bound=None):
+        """Deletes <num> or less unused <template>-based service VM instances.
 
         The number of deleted service vm instances is returned.
         """
         # Delete the "youngest" hosting devices since they are
         # more likely to not have finished booting
         num_deleted = 0
-        plugging_drv = self.get_hosting_device_plugging_driver(
-            context, host_type)
-        h_dev_drv = self.get_hosting_device_driver(context, host_type)
-        if plugging_drv is None or h_dev_drv is None:
+        plugging_drv = self.get_hosting_device_plugging_driver(context,
+                                                               template['id'])
+        hosting_device_drv = self.get_hosting_device_driver(context,
+                                                            template['id'])
+        if plugging_drv is None or hosting_device_drv is None:
             return num_deleted
         query = context.session.query(HostingDevice)
         query = query.outerjoin(
             RouterHostingDeviceBinding,
             HostingDevice.id == RouterHostingDeviceBinding.hosting_device_id)
-        query = query.filter(and_(HostingDevice.host_type == host_type,
-                                  HostingDevice.admin_state_up == True,
-                                  HostingDevice.tenant_bound == None))
+        query = query.filter(HostingDevice.template_id == template['id'],
+                             HostingDevice.admin_state_up == True,
+                             HostingDevice.tenant_bound == None)
         query = query.group_by(HostingDevice.id)
         query = query.having(
             func.count(RouterHostingDeviceBinding.router_id) == 0)
@@ -625,7 +648,7 @@ class HostingDeviceManager(object):
                     context, hd_candidates[i]['id'], self.l3_tenant_id(),
                     self.mgmt_nw_id())
                 if self._svc_vm_mgr.delete_service_vm(
-                        context, hd_candidates[i]['id'], h_dev_drv,
+                        context, hd_candidates[i]['id'], hosting_device_drv,
                         self.mgmt_nw_id()):
                     context.session.delete(hd_candidates[i])
                     plugging_drv.delete_hosting_device_resources(
@@ -635,7 +658,7 @@ class HostingDeviceManager(object):
 
     def _delete_dead_service_vm_hosting_device(self, context, hosting_device,
                                                logical_resource_ids):
-        """Deletes a presumably dead service VM.
+        """Deletes a presumably dead <hosting_device> service VM.
 
         This will indirectly make all of its hosted resources unscheduled.
         """
@@ -644,14 +667,12 @@ class HostingDeviceManager(object):
         host_type = hosting_device['host_type']
         category = hosting_device['host_category']
         plugging_drv = self.get_hosting_device_plugging_driver(
-            context, hosting_device['host_type'])
+            context, hosting_device['template_id'])
         hosting_device_drv = self.get_hosting_device_driver(
-            context, hosting_device['host_type'])
+            context, hosting_device['template_id'])
         slots = self._get_slots_counters(host_type)
-        capacity = (self.get_hosting_device_capacity(context, host_type) or
-                    {}).get('num_routers')
         if (plugging_drv is None or hosting_device_drv is None or
-                slots is None or capacity is None):
+                slots is None):
             return
         with slots['lock']:
             if slots['available'] < 0:
@@ -665,7 +686,7 @@ class HostingDeviceManager(object):
                 # For an unbound (dead) hosting device all its slots (used
                 # and unused) should be counted when reducing the number of
                 # available slots.
-                reduce_by = capacity
+                reduce_by = hosting_device['template']['slot_capacity']
             res = plugging_drv.get_hosting_device_resources(
                 context, hosting_device['id'], self.l3_tenant_id(),
                 self.mgmt_nw_id())

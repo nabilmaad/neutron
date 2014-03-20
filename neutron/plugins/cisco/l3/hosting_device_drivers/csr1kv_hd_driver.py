@@ -44,6 +44,9 @@ class CSR1kvHostingDeviceDriver(HostingDeviceDriver):
     def _core_plugin(self):
         return manager.NeutronManager.get_plugin()
 
+    def hosting_device_name(self):
+        return "CSR1kv"
+
     def create_configdrive_files(self, context, mgmtport):
         mgmt_ip = mgmtport['fixed_ips'][0]['ip_address']
         subnet_data = self._core_plugin.get_subnet(

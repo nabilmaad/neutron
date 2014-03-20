@@ -13,7 +13,7 @@ localrc=$3
 source ~/devstack/openrc admin demo
 ./setup_keystone_for_csr1kv_l3.sh $osn
 source ~/devstack/openrc $osn L3AdminTenant
-./setup_nova_and_glance_for_csr1kv_l3.sh $osn $localrc
+./setup_nova_and_glance_for_csr1kv_l3.sh $osn $plugin $localrc
 ./setup_neutron_for_csr1kv_l3.sh $osn $plugin $localrc
 sudo -E ./setup_l3cfgagent_networking.sh $osn $plugin
 source ~/devstack/openrc admin demo

@@ -885,15 +885,17 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
         return updated_port
 
     def delete_port(self, context, id, l3_port_check=True):
-
         # if needed, check to see if this is a port owned by
         # and l3-router.  If so, we should prevent deletion.
-        if l3_port_check:
-            self.prevent_l3_port_deletion(context, id)
+        l3plugin = manager.NeutronManager.get_service_plugins().get(
+            svc_constants.L3_ROUTER_NAT)
+        if l3plugin and l3_port_check:
+            l3plugin.prevent_l3_port_deletion(context, id)
 
         session = context.session
         with session.begin(subtransactions=True):
-            self.disassociate_floatingips(context, id)
+            if l3plugin:
+                l3plugin.disassociate_floatingips(context, id)
             port = self.get_port(context, id)
             self._delete_port_security_group_bindings(context, id)
             super(CSR1kv_OVSNeutronPluginV2, self).delete_port(context, id)
