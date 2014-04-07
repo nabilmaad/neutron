@@ -64,6 +64,8 @@ from neutron.plugins.csr1kv_openvswitch.common import constants
 from neutron.plugins.csr1kv_openvswitch.extensions import trunkport
 from neutron.plugins.openvswitch import ovs_db_v2
 
+from neutron.plugins.cisco.l3.db.router_types_db import RouterTypesDbMixin
+
 
 LOG = logging.getLogger(__name__)
 
@@ -288,7 +290,8 @@ class CSR1kv_OVSNeutronPluginV2(db_base_plugin_v2.NeutronDbPluginV2,
                                 agentschedulers_db.DhcpAgentSchedulerDbMixin,
                                 portbindings_db.PortBindingMixin,
                                 extradhcpopt_db.ExtraDhcpOptMixin,
-                                addr_pair_db.AllowedAddressPairsMixin):
+                                addr_pair_db.AllowedAddressPairsMixin,
+                                RouterTypesDbMixin):
 
     """Implement the Neutron abstractions using Open vSwitch.
 

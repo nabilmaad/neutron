@@ -68,7 +68,8 @@ class CiscoRouterPlugin(db_base_plugin_v2.CommonDbMixin,
     l3_router_appliance_db.L3RouterApplianceDBMixin.
     """
     supported_extension_aliases = ["router",  # "ext-gw-mode",
-                                   "extraroute", "l3_agent_scheduler"]
+                                   "extraroute", "l3_agent_scheduler",
+                                   "router_type"]
 
     def __init__(self):
         qdbapi.register_models(base=model_base.BASEV2)
