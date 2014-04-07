@@ -362,7 +362,10 @@ class CiscoCfgAgent(manager.Manager):
         # First we process routing service
         routers = resources.get('routers')
         if routers:
-            self.process_routers(routers, resources.get('all_routers', False))
+            self.routing_service_helper.process_routers(routers,
+                                                        resources.get(
+                                                            'all_routers',
+                                                        False))
 
         removed_routers = resources.get('removed_routers')
         if removed_routers:
@@ -371,174 +374,7 @@ class CiscoCfgAgent(manager.Manager):
         LOG.debug(_("Processing for hosting device: %d completed"),
                   hosting_device_id)
 
-    ## Sub orchestrator ##
-    def _process_routers(self, routers, all_routers=False):
-        """Process the set of routers.
 
-        Iterating on the set of routers received and comparing it with the
-        set of routers already in the agent, new routers which are added are
-        identified. Then check the reachability (via ping) of hosting device
-        where the router is hosted and backlogs it if necessary. For routers
-        which are only updated, call `process_router()` on them. Note that
-        for each router this is done in an independent thread.
-
-        When all_routers is set to True, this will result in the detection and
-        deletion of routers which are removed also.
-        :param routers: The set of routers to be processed
-        :param all_routers: Flag for specifying a partial list of routers
-        :return: None
-        """
-        if (self.conf.external_network_bridge and
-                not (ip_lib.device_exists(self.conf.external_network_bridge))):
-            LOG.error(_("The external network bridge '%s' does not exist"),
-                      self.conf.external_network_bridge)
-            return
-
-        target_ex_net_id = self._fetch_external_net_id()
-        # if routers are all the routers we have (they are from router sync on
-        # starting or when error occurs during running), we seek the
-        # routers which should be removed.
-        # If routers are from server side notification, we seek them
-        # from subset of incoming routers and ones we have now.
-        if all_routers:
-            prev_router_ids = set(self.router_info)
-        else:
-            prev_router_ids = set(self.router_info) & set(
-                [router['id'] for router in routers])
-        cur_router_ids = set()
-        for r in routers:
-            if not r['admin_state_up']:
-                continue
-                # Note: Whether the router can only be assigned to a particular
-            # hosting device is decided and enforced by the plugin.
-            # So no checks are done here.
-            ex_net_id = (r['external_gateway_info'] or {}).get('network_id')
-            if (target_ex_net_id and ex_net_id and
-                        ex_net_id != target_ex_net_id):
-                continue
-            cur_router_ids.add(r['id'])
-            if not self._hdm.is_hosting_device_reachable(r['id'], r):
-                LOG.info(_("Router: %(id)s is on unreachable hosting device. "
-                           "Skip processing it."), {'id': r['id']})
-                continue
-            if r['id'] not in self.router_info:
-                self._router_added(r['id'], r)
-            ri = self.router_info[r['id']]
-            ri.router = r
-            self.process_router(ri)
-            # identify and remove routers that no longer exist
-        for router_id in prev_router_ids - cur_router_ids:
-            self._router_removed(router_id)
-
-    def process_router(self, ri):
-        """Process a router, apply latest configuration and update router_info.
-
-        Get the router dict from  RouterInfo and proceed to detect changes
-        from the last known state. When new ports or deleted ports are
-        detected, `internal_network_added()` or `internal_networks_removed()`
-        are called accordingly. Similarly changes in ex_gw_port causes
-         `external_gateway_added()` or `external_gateway_removed()` calls.
-        Next, floating_ips and routes are processed. Also, latest state is
-        stored in ri.internal_ports and ri.ex_gw_port for future comparisons.
-
-        :param ri : neutron.plugins.cisco.l3.agent.router_info.RouterInfo
-        corresponding to the router being processed.
-        :return:None
-        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
-        the configuration operation fails.
-        """
-        try:
-            ex_gw_port = ri.router.get('gw_port')
-            ri.ha_info = ri.router.get('ha_info', None)
-            internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
-            existing_port_ids = set([p['id'] for p in ri.internal_ports])
-            current_port_ids = set([p['id'] for p in internal_ports
-                                    if p['admin_state_up']])
-            new_ports = [p for p in internal_ports
-                         if p['id'] in (current_port_ids - existing_port_ids)]
-            old_ports = [p for p in ri.internal_ports
-                         if p['id'] not in current_port_ids]
-
-            for p in new_ports:
-                self._set_subnet_info(p)
-                self.internal_network_added(ri, p, ex_gw_port)
-                ri.internal_ports.append(p)
-
-            for p in old_ports:
-                self.internal_network_removed(ri, p, ri.ex_gw_port)
-                ri.internal_ports.remove(p)
-
-            if ex_gw_port and not ri.ex_gw_port:
-                self._set_subnet_info(ex_gw_port)
-                self.external_gateway_added(ri, ex_gw_port)
-            elif not ex_gw_port and ri.ex_gw_port:
-                self.external_gateway_removed(ri, ri.ex_gw_port)
-
-            if ex_gw_port:
-                self.process_router_floating_ips(ri, ex_gw_port)
-
-            ri.ex_gw_port = ex_gw_port
-            self.routes_updated(ri)
-        except DriverException as e:
-            with excutils.save_and_reraise_exception():
-                LOG.error(e)
-
-    def process_router_floating_ips(self, ri, ex_gw_port):
-        """Process a router's floating ips.
-
-        Compare current floatingips (in ri.floating_ips) with the router's
-        updated floating ips (in ri.router.floating_ips) and detect
-        flaoting_ips which were added or removed. Notify driver of
-        the change via `floating_ip_added()` or `floating_ip_removed()`.
-
-        :param ri:  neutron.plugins.cisco.l3.agent.router_info.RouterInfo
-        corresponding to the router being processed.
-        :param ex_gw_port: Port dict of the external gateway port.
-        :return: None
-        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
-        the configuration operation fails.
-        """
-
-        floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
-        existing_floating_ip_ids = set(
-            [fip['id'] for fip in ri.floating_ips])
-        cur_floating_ip_ids = set([fip['id'] for fip in floating_ips])
-
-        id_to_fip_map = {}
-
-        for fip in floating_ips:
-            if fip['port_id']:
-                # store to see if floatingip was remapped
-                id_to_fip_map[fip['id']] = fip
-                if fip['id'] not in existing_floating_ip_ids:
-                    ri.floating_ips.append(fip)
-                    self.floating_ip_added(ri, ex_gw_port,
-                                           fip['floating_ip_address'],
-                                           fip['fixed_ip_address'])
-
-        floating_ip_ids_to_remove = (existing_floating_ip_ids -
-                                     cur_floating_ip_ids)
-        for fip in ri.floating_ips:
-            if fip['id'] in floating_ip_ids_to_remove:
-                ri.floating_ips.remove(fip)
-                self.floating_ip_removed(ri, ri.ex_gw_port,
-                                         fip['floating_ip_address'],
-                                         fip['fixed_ip_address'])
-            else:
-                # handle remapping of a floating IP
-                new_fip = id_to_fip_map[fip['id']]
-                new_fixed_ip = new_fip['fixed_ip_address']
-                existing_fixed_ip = fip['fixed_ip_address']
-                if (new_fixed_ip and existing_fixed_ip and
-                        new_fixed_ip != existing_fixed_ip):
-                    floating_ip = fip['floating_ip_address']
-                    self.floating_ip_removed(ri, ri.ex_gw_port,
-                                             floating_ip,
-                                             existing_fixed_ip)
-                    self.floating_ip_added(ri, ri.ex_gw_port,
-                                           floating_ip, new_fixed_ip)
-                    ri.floating_ips.remove(fip)
-                    ri.floating_ips.append(new_fip)
 
     def _process_backlogged_hosting_devices(self, context):
         """Process currently back logged devices.
@@ -672,6 +508,177 @@ class RoutingServiceHelper(object):
     def floating_ip_removed(self, ri, ex_gw_port, floating_ip, fixed_ip):
         driver = self._hdm.get_driver(ri)
         driver.floating_ip_removed(ri, ex_gw_port, floating_ip, fixed_ip)
+
+    def process_routers(self, routers, all_routers=False):
+        """Process the set of routers.
+
+        Iterating on the set of routers received and comparing it with the
+        set of routers already in the agent, new routers which are added are
+        identified. Then check the reachability (via ping) of hosting device
+        where the router is hosted and backlogs it if necessary. For routers
+        which are only updated, call `process_router()` on them. Note that
+        for each router this is done in an independent thread.
+
+        When all_routers is set to True, this will result in the detection and
+        deletion of routers which are removed also.
+        :param routers: The set of routers to be processed
+        :param all_routers: Flag for specifying a partial list of routers
+        :return: None
+        """
+        if (self.conf.external_network_bridge and
+                not (ip_lib.device_exists(self.conf.external_network_bridge))):
+            LOG.error(_("The external network bridge '%s' does not exist"),
+                      self.conf.external_network_bridge)
+            return
+
+        target_ex_net_id = self._fetch_external_net_id()
+        # if routers are all the routers we have (they are from router sync on
+        # starting or when error occurs during running), we seek the
+        # routers which should be removed.
+        # If routers are from server side notification, we seek them
+        # from subset of incoming routers and ones we have now.
+        if all_routers:
+            prev_router_ids = set(self.router_info)
+        else:
+            prev_router_ids = set(self.router_info) & set(
+                [router['id'] for router in routers])
+        cur_router_ids = set()
+        for r in routers:
+            if not r['admin_state_up']:
+                continue
+                # Note: Whether the router can only be assigned to a particular
+            # hosting device is decided and enforced by the plugin.
+            # So no checks are done here.
+            ex_net_id = (r['external_gateway_info'] or {}).get(
+                'network_id')
+            if (target_ex_net_id and ex_net_id and
+                    ex_net_id != target_ex_net_id):
+                continue
+            cur_router_ids.add(r['id'])
+            if not self._hdm.is_hosting_device_reachable(r['id'], r):
+                LOG.info(
+                    _("Router: %(id)s is on unreachable hosting device. "
+                      "Skip processing it."), {'id': r['id']})
+                continue
+            if r['id'] not in self.router_info:
+                self._router_added(r['id'], r)
+            ri = self.router_info[r['id']]
+            ri.router = r
+            self.process_router(ri)
+            # identify and remove routers that no longer exist
+        for router_id in prev_router_ids - cur_router_ids:
+            self._router_removed(router_id)
+
+    def process_router(self, ri):
+        """Process a router, apply latest configuration and update router_info.
+
+        Get the router dict from  RouterInfo and proceed to detect changes
+        from the last known state. When new ports or deleted ports are
+        detected, `internal_network_added()` or `internal_networks_removed()`
+        are called accordingly. Similarly changes in ex_gw_port causes
+         `external_gateway_added()` or `external_gateway_removed()` calls.
+        Next, floating_ips and routes are processed. Also, latest state is
+        stored in ri.internal_ports and ri.ex_gw_port for future comparisons.
+
+        :param ri : neutron.plugins.cisco.l3.agent.router_info.RouterInfo
+        corresponding to the router being processed.
+        :return:None
+        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
+        the configuration operation fails.
+        """
+        try:
+            ex_gw_port = ri.router.get('gw_port')
+            ri.ha_info = ri.router.get('ha_info', None)
+            internal_ports = ri.router.get(l3_constants.INTERFACE_KEY, [])
+            existing_port_ids = set([p['id'] for p in ri.internal_ports])
+            current_port_ids = set([p['id'] for p in internal_ports
+                                    if p['admin_state_up']])
+            new_ports = [p for p in internal_ports
+                         if
+                         p['id'] in (current_port_ids - existing_port_ids)]
+            old_ports = [p for p in ri.internal_ports
+                         if p['id'] not in current_port_ids]
+
+            for p in new_ports:
+                self._set_subnet_info(p)
+                self.internal_network_added(ri, p, ex_gw_port)
+                ri.internal_ports.append(p)
+
+            for p in old_ports:
+                self.internal_network_removed(ri, p, ri.ex_gw_port)
+                ri.internal_ports.remove(p)
+
+            if ex_gw_port and not ri.ex_gw_port:
+                self._set_subnet_info(ex_gw_port)
+                self.external_gateway_added(ri, ex_gw_port)
+            elif not ex_gw_port and ri.ex_gw_port:
+                self.external_gateway_removed(ri, ri.ex_gw_port)
+
+            if ex_gw_port:
+                self.process_router_floating_ips(ri, ex_gw_port)
+
+            ri.ex_gw_port = ex_gw_port
+            self.routes_updated(ri)
+        except DriverException as e:
+            with excutils.save_and_reraise_exception():
+                LOG.error(e)
+
+    def process_router_floating_ips(self, ri, ex_gw_port):
+        """Process a router's floating ips.
+
+        Compare current floatingips (in ri.floating_ips) with the router's
+        updated floating ips (in ri.router.floating_ips) and detect
+        flaoting_ips which were added or removed. Notify driver of
+        the change via `floating_ip_added()` or `floating_ip_removed()`.
+
+        :param ri:  neutron.plugins.cisco.l3.agent.router_info.RouterInfo
+        corresponding to the router being processed.
+        :param ex_gw_port: Port dict of the external gateway port.
+        :return: None
+        :raises: neutron.plugins.cisco.l3.common.exceptions.DriverException if
+        the configuration operation fails.
+        """
+
+        floating_ips = ri.router.get(l3_constants.FLOATINGIP_KEY, [])
+        existing_floating_ip_ids = set(
+            [fip['id'] for fip in ri.floating_ips])
+        cur_floating_ip_ids = set([fip['id'] for fip in floating_ips])
+
+        id_to_fip_map = {}
+
+        for fip in floating_ips:
+            if fip['port_id']:
+                # store to see if floatingip was remapped
+                id_to_fip_map[fip['id']] = fip
+                if fip['id'] not in existing_floating_ip_ids:
+                    ri.floating_ips.append(fip)
+                    self.floating_ip_added(ri, ex_gw_port,
+                                           fip['floating_ip_address'],
+                                           fip['fixed_ip_address'])
+
+        floating_ip_ids_to_remove = (existing_floating_ip_ids -
+                                     cur_floating_ip_ids)
+        for fip in ri.floating_ips:
+            if fip['id'] in floating_ip_ids_to_remove:
+                ri.floating_ips.remove(fip)
+                self.floating_ip_removed(ri, ri.ex_gw_port,
+                                         fip['floating_ip_address'],
+                                         fip['fixed_ip_address'])
+            else:
+                # handle remapping of a floating IP
+                new_fip = id_to_fip_map[fip['id']]
+                new_fixed_ip = new_fip['fixed_ip_address']
+                existing_fixed_ip = fip['fixed_ip_address']
+                if (new_fixed_ip and existing_fixed_ip and
+                        new_fixed_ip != existing_fixed_ip):
+                    floating_ip = fip['floating_ip_address']
+                    self.floating_ip_removed(ri, ri.ex_gw_port,
+                                             floating_ip,
+                                             existing_fixed_ip)
+                    self.floating_ip_added(ri, ri.ex_gw_port,
+                                           floating_ip, new_fixed_ip)
+                    ri.floating_ips.remove(fip)
+                    ri.floating_ips.append(new_fip)
 
     def routes_updated(self, ri):
         """Update the state of routes in the router.
