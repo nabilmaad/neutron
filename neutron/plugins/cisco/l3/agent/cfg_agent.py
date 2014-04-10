@@ -139,7 +139,7 @@ class CiscoCfgAgent(manager.Manager):
                           "sync_routers_task. Checks for full sync or "
                           "process backlogged hosting devices here. Overrides "
                           "openstack periodic scheduler default")),
-        cfg.StrOpt('rpc_loop_interval', default=3,
+        cfg.IntOpt('rpc_loop_interval', default=3,
                    help=_("Interval when the rpc loop executes. This is when "
                           "agent fetches info about the updated or removed "
                           "routers notified from a plugin side RPC.")),
@@ -355,21 +355,21 @@ class CiscoCfgAgent(manager.Manager):
         """
         hosting_devices = {}
 
-        for r in resources.get('routers'):
+        for r in resources.get('routers') or []:
             hd_id = r['hosting_device']['id']
             hosting_devices.setdefault(hd_id, {})
             hosting_devices[hd_id].setdefault('routers', []).append(r)
 
-        for r in resources.get('removed_routers'):
+        for r in resources.get('removed_routers') or []:
             hd_id = r['hosting_device']['id']
             hosting_devices.setdefault(hd_id, {})
             hosting_devices[hd_id].setdefault('removed_routers', []).append(r)
 
-        for vpn in resources.get('vpns'):
-            pass
-
-        for fw in resources.get('fws'):
-            pass
+        # for vpn in resources.get('vpns') or []:
+        #     pass
+        #
+        # for fw in resources.get('fws') or []:
+        #     pass
 
         return hosting_devices
 
