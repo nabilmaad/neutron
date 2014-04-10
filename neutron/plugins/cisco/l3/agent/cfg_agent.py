@@ -16,6 +16,8 @@
 
 import eventlet
 import netaddr
+import time
+import sys
 
 from oslo.config import cfg
 
@@ -98,6 +100,15 @@ class CiscoRoutingPluginApi(proxy.RpcProxy):
                                 hosting_device_ids=hd_ids),
                   topic=self.topic)
 
+    def register_for_duty(self, context):
+        """Report that a config agent is ready for duty.
+        """
+        # Cast since we don't expect a return value.
+        return self.call(context, self.make_msg('register_for_duty',
+                                                host=self.host),
+                         topic=self.topic)
+
+
 #ToDo: Placeholder for PluginAPI for other services
 
 class CiscoCfgAgent(manager.Manager):
@@ -149,8 +160,9 @@ class CiscoCfgAgent(manager.Manager):
 
         #Other references held by the cfg agent
         self._hdm = HostingDevicesManager()
-        self._initialize_service_helpers()
         self._initialize_plugin_rpc(host)
+        self._agent_registration()
+        self._initialize_service_helpers()
         self._start_periodic_tasks()
         super(CiscoCfgAgent, self).__init__(host=self.conf.host)
 
@@ -159,6 +171,21 @@ class CiscoCfgAgent(manager.Manager):
 
     def _initialize_plugin_rpc(self, host):
         self.plugin_rpc = CiscoRoutingPluginApi(topics.L3PLUGIN, host)
+
+    def _agent_registration(self):
+        res = self.plugin_rpc.register_for_duty(self.context)
+        if res is True:
+            LOG.info(_("[Agent registration] Agent successfully registered"))
+        elif res is False:
+            LOG.info(_("[Agent registration] Neutron server said that "
+                       "device manager was not ready."
+                       "Retrying in 10 seconds "))
+            time.sleep(2)
+            self._agent_registration()
+        elif res is None:
+            LOG.info(_("[Agent registration] Neutron server said that no "
+                       "device manager was found. Exiting Agent"))
+            sys.exit(1)
 
     def _start_periodic_tasks(self):
         self.rpc_loop = loopingcall.FixedIntervalLoopingCall(self._rpc_loop)
@@ -373,8 +400,6 @@ class CiscoCfgAgent(manager.Manager):
                 removed_routers)
         LOG.debug(_("Processing for hosting device: %d completed"),
                   hosting_device_id)
-
-
 
     def _process_backlogged_hosting_devices(self, context):
         """Process currently back logged devices.
