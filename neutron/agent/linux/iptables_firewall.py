@@ -18,11 +18,16 @@
 import netaddr
 from oslo.config import cfg
 
+import keystoneclient.middleware.auth_token
+from neutronclient.common import exceptions
+from neutronclient.v2_0 import client
+
 from neutron.agent import firewall
 from neutron.agent.linux import iptables_manager
 from neutron.common import constants
 from neutron.openstack.common import log as logging
 
+CONF = cfg.CONF
 
 LOG = logging.getLogger(__name__)
 SG_CHAIN = 'sg-chain'
@@ -260,11 +265,65 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
             security_group_rules)
         ipv4_iptables_rule = []
         ipv6_iptables_rule = []
+
+		# Check if anti-spoofing is enabled in neutron.conf
+		antiSpoofingDisabled = False
+		f = open("/etc/neutron/neutron.conf", "r")
+		line = f.readline()
+		while line:
+		    if('disable_anti_spoofing' in line):
+		        f.close()
+		        if('True' in line or 'true' in line):
+		            antiSpoofingDisabled = True
+		        break
+			line = f.readline()
+
         if direction == EGRESS_DIRECTION:
-            self._spoofing_rule(port,
-                                ipv4_iptables_rule,
-                                ipv6_iptables_rule)
-            ipv4_iptables_rule += self._drop_dhcp_rule()
+			if(antiSpoofingDisabled):
+				# Disable anti-spoofing for specified security group
+				# Get User-defined security group name.
+				secGroupServiceVM= ''
+				f = open("/etc/neutron/neutron.conf", "r")
+				line = f.readline()
+				while line:
+					if('security_group_name' in line):
+						f.close()
+						secGroupServiceVM = line.rsplit(' ')[2].rstrip()
+						break
+					line = f.readline()
+
+				# neutronClient credentials from neutron.conf
+				# authUrl example: 'http://172.19.148.164:35357/v2.0/'
+				authUrl= ('%s://%s:%s/v2.0/' %
+										(CONF.keystone_authtoken.auth_protocol,
+										CONF.keystone_authtoken.auth_host,
+										CONF.keystone_authtoken.auth_port))
+				neutronClient = client.Client(username=CONF.keystone_authtoken.admin_user,
+									password=CONF.keystone_authtoken.admin_password,
+									tenant_name=CONF.keystone_authtoken.admin_tenant_name,
+									auth_url=authUrl)
+				try:
+					for secgrid in port['security_groups']:
+						secgrp = neutronClient.show_security_group(secgrid)
+						if secgrp['security_group']['name']==secGroupServiceVM:
+							break
+				except exceptions.NeutronException as e:
+					LOG.error(_('Neutron Client show_security_group call error: %s for sec group id %s'), str(e), str(secgrid))
+				
+				# If this is the security group name specified, don't apply spoofing rule.
+				if(secgrp['security_group']['name']!=secGroupServiceVM):
+					self._spoofing_rule(port,
+	                            ipv4_iptables_rule,
+	                            ipv6_iptables_rule)
+	    			ipv4_iptables_rule += self._drop_dhcp_rule()
+			
+			# Anti spoofing is disabled
+			else:
+				self._spoofing_rule(port,
+			                        ipv4_iptables_rule,
+			                        ipv6_iptables_rule)
+			    ipv4_iptables_rule += self._drop_dhcp_rule()
+
         if direction == INGRESS_DIRECTION:
             ipv6_iptables_rule += self._accept_inbound_icmpv6()
         ipv4_iptables_rule += self._convert_sgr_to_iptables_rules(
