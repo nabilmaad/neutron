@@ -267,30 +267,29 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         ipv6_iptables_rule = []
 
 		# Check if anti-spoofing is enabled in neutron.conf
+        # and get the user-defined security group name
 		antiSpoofingDisabled = False
+        secGroupServiceVM= ''
 		f = open("/etc/neutron/neutron.conf", "r")
 		line = f.readline()
 		while line:
 		    if('disable_anti_spoofing' in line):
-		        f.close()
 		        if('True' in line or 'true' in line):
 		            antiSpoofingDisabled = True
-		        break
+                    if(secGroupServiceVM != ''):
+                        break # Both parameters found
+                else:
+                    break   # Leave loop if False
+		    if('security_group_name' in line):
+                secGroupServiceVM = line.rsplit(' ')[2].rstrip()
+                if(antiSpoofingDisabled):
+                    break   # Both parameters found
 			line = f.readline()
+        f.close()
 
         if direction == EGRESS_DIRECTION:
 			if(antiSpoofingDisabled):
 				# Disable anti-spoofing for specified security group
-				# Get User-defined security group name.
-				secGroupServiceVM= ''
-				f = open("/etc/neutron/neutron.conf", "r")
-				line = f.readline()
-				while line:
-					if('security_group_name' in line):
-						f.close()
-						secGroupServiceVM = line.rsplit(' ')[2].rstrip()
-						break
-					line = f.readline()
 
 				# neutronClient credentials from neutron.conf
 				# authUrl example: 'http://172.19.148.164:35357/v2.0/'
