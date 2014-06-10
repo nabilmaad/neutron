@@ -266,62 +266,62 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
         ipv4_iptables_rule = []
         ipv6_iptables_rule = []
 
-		# Check if anti-spoofing is enabled in neutron.conf
+	# Check if anti-spoofing is enabled in neutron.conf
         # and get the user-defined security group name
-		antiSpoofingDisabled = False
+	antiSpoofingDisabled = False
         secGroupServiceVM= ''
-		f = open("/etc/neutron/neutron.conf", "r")
-		line = f.readline()
-		while line:
-		    if('disable_anti_spoofing' in line):
-		        if('True' in line or 'true' in line):
-		            antiSpoofingDisabled = True
+	f = open("/etc/neutron/neutron.conf", "r")
+	line = f.readline()
+	while line:
+	    if('disable_anti_spoofing' in line):
+	        if('True' in line or 'true' in line):
+		    antiSpoofingDisabled = True
                     if(secGroupServiceVM != ''):
                         break # Both parameters found
                 else:
                     break   # Leave loop if False
-		    if('security_group_name' in line):
+	    if('security_group_name' in line):
                 secGroupServiceVM = line.rsplit(' ')[2].rstrip()
                 if(antiSpoofingDisabled):
                     break   # Both parameters found
-			line = f.readline()
+	    line = f.readline()
         f.close()
 
         if direction == EGRESS_DIRECTION:
-			if(antiSpoofingDisabled):
-				# Disable anti-spoofing for specified security group
+	    if(antiSpoofingDisabled):
+	        # Disable anti-spoofing for specified security group
 
-				# neutronClient credentials from neutron.conf
-				# authUrl example: 'http://172.19.148.164:35357/v2.0/'
-				authUrl= ('%s://%s:%s/v2.0/' %
-										(CONF.keystone_authtoken.auth_protocol,
-										CONF.keystone_authtoken.auth_host,
-										CONF.keystone_authtoken.auth_port))
-				neutronClient = client.Client(username=CONF.keystone_authtoken.admin_user,
-									password=CONF.keystone_authtoken.admin_password,
-									tenant_name=CONF.keystone_authtoken.admin_tenant_name,
-									auth_url=authUrl)
-				try:
-					for secgrid in port['security_groups']:
-						secgrp = neutronClient.show_security_group(secgrid)
-						if secgrp['security_group']['name']==secGroupServiceVM:
-							break
-				except exceptions.NeutronException as e:
-					LOG.error(_('Neutron Client show_security_group call error: %s for sec group id %s'), str(e), str(secgrid))
+	        # neutronClient credentials from neutron.conf
+		# authUrl example: 'http://172.19.148.164:35357/v2.0/'
+	        authUrl= ('%s://%s:%s/v2.0/' %
+					(CONF.keystone_authtoken.auth_protocol,
+					CONF.keystone_authtoken.auth_host,
+					CONF.keystone_authtoken.auth_port))
+	        neutronClient = client.Client(username=CONF.keystone_authtoken.admin_user,
+					      password=CONF.keystone_authtoken.admin_password,
+					      tenant_name=CONF.keystone_authtoken.admin_tenant_name,
+					      auth_url=authUrl)
+		try:
+		    for secgrid in port['security_groups']:
+		        secgrp = neutronClient.show_security_group(secgrid)
+			if secgrp['security_group']['name']==secGroupServiceVM:
+			    break
+		except exceptions.NeutronException as e:
+		    LOG.error(_('Neutron Client show_security_group call error: %s for sec group id %s'), str(e), str(secgrid))
 				
-				# If this is the security group name specified, don't apply spoofing rule.
-				if(secgrp['security_group']['name']!=secGroupServiceVM):
-					self._spoofing_rule(port,
-	                            ipv4_iptables_rule,
-	                            ipv6_iptables_rule)
-	    			ipv4_iptables_rule += self._drop_dhcp_rule()
+		# If this is the security group name specified, don't apply spoofing rule.
+		if(secgrp['security_group']['name']!=secGroupServiceVM):
+		    self._spoofing_rule(port,
+	                                ipv4_iptables_rule,
+	                                ipv6_iptables_rule)
+	    	    ipv4_iptables_rule += self._drop_dhcp_rule()
 			
-			# Anti spoofing is disabled
-			else:
-				self._spoofing_rule(port,
-			                        ipv4_iptables_rule,
-			                        ipv6_iptables_rule)
-			    ipv4_iptables_rule += self._drop_dhcp_rule()
+	    # Anti spoofing is disabled
+	    else:
+	        self._spoofing_rule(port,
+		                     ipv4_iptables_rule,
+		                     ipv6_iptables_rule)
+	        ipv4_iptables_rule += self._drop_dhcp_rule()
 
         if direction == INGRESS_DIRECTION:
             ipv6_iptables_rule += self._accept_inbound_icmpv6()
