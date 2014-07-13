@@ -281,7 +281,8 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                 else:
                     break   # Leave loop if False
             if('security_group_name' in line):
-                secGroupServiceVM = line.rsplit(' ')[2].rstrip()
+                secGroupServiceVMString = line.rsplit(' ')[2].rstrip()
+                secGroupServiceVM = secGroupServiceVMString[1:-1].split(',')
                 if(antiSpoofingDisabled):
                     break   # Both parameters found
             line = f.readline()
@@ -304,13 +305,13 @@ class IptablesFirewallDriver(firewall.FirewallDriver):
                 try:
                     for secgrid in port['security_groups']:
                         secgrp = neutronClient.show_security_group(secgrid)
-                        if secgrp['security_group']['name']==secGroupServiceVM:
+                        if secgrp['security_group']['name'] in secGroupServiceVM:
                             break
                 except exceptions.NeutronException as e:
                     LOG.error(_('Neutron Client show_security_group call error: %s for sec group id %s'), str(e), str(secgrid))
                                 
                 # If this is the security group name specified, don't apply spoofing rule.
-                if(secgrp['security_group']['name']!=secGroupServiceVM):
+                if(secgrp['security_group']['name'] not in secGroupServiceVM):
                     self._spoofing_rule(port,
                                         ipv4_iptables_rule,
                                         ipv6_iptables_rule)
